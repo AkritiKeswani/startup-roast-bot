@@ -1,0 +1,28 @@
+[project]
+name = "startup-roast-bot"
+cerebrium_url = "https://api.cerebrium.ai/v2"
+
+[deployment]
+name = "startup-roast-bot"
+python_version = "3.11"
+cuda = false
+gpu = false
+replicas = 3
+min_replicas = 1
+max_replicas = 10
+response_grace_period = 30
+timeout = 300
+memory = "2Gi"
+cpu = "1"
+
+[cerebrium.runtime.custom]
+port = 8000
+entrypoint = "uvicorn main:app --host 0.0.0.0 --port 8000"
+healthcheck_endpoint = "/"
+readycheck_endpoint = "/"
+
+[env]
+# No external APIs needed - everything runs on Cerebrium!
+
+[build]
+requirements = ["requirements.txt"]
