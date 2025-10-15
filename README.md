@@ -1,290 +1,181 @@
-# 🔥 Startup Roast Agent
+# Startup Roast Bot
 
-> **"Anyone can write this loop in Python, but only Cerebrium lets you run 100 of them at once, reliably, with 2-second cold starts and clean teardown."**
+AI-powered startup website analyzer and roaster using Browserbase + Playwright + Grok.
 
-An **AI Agent** that roasts startup websites using Cerebrium orchestration. This demonstrates how Cerebrium transforms a simple Python script into a production-grade AI agent platform.
+## Architecture
 
-**What makes this an AI Agent:**
-- 🧠 **Reasoning** - Analyzes websites with AI vision
-- 🎯 **Planning** - Decides what actions to take
-- 🤖 **Acting** - Takes screenshots and generates content
-- 📊 **Learning** - Adapts based on website content
+This project implements a complete scraping and analysis pipeline:
 
-## 🏗️ Architecture
+1. **YC Directory Scraping** → Extract company profile URLs from https://www.ycombinator.com/companies
+2. **YC Profile Analysis** → Extract actual website URLs from each company's YC profile  
+3. **Website Analysis** → Visit each website, take screenshots, extract page data
+4. **AI Roasting** → Generate witty roasts using Grok LLM based on landing page analysis
 
-This project demonstrates how Cerebrium transforms a simple Python script into a scalable, observable, multi-session agent platform:
+## Tech Stack
 
-```
-Pure Python Loop ↔ Cerebrium Orchestration ↔ Production-Ready Agent
-```
+- **Backend**: FastAPI + Cerebrium (custom runtime with WebSocket support)
+- **Browser Automation**: Browserbase + Playwright (CDP)
+- **AI**: Grok LLM for roast generation
+- **Storage**: AWS S3 for screenshots and artifacts
+- **Frontend**: Vite + React + Tailwind CSS
 
-### Core Stack
+## Quick Start
 
-| Layer | Technology | Purpose |
-|-------|------------|---------|
-| **Runtime** | Cerebrium Serverless Container | Persistent, autoscaling host for long-running loops |
-| **Language** | Python 3.11 + FastAPI | Simple REST + WebSocket API |
-| **Orchestration** | Cerebrium Platform | Handles scaling, monitoring, and reliability |
-| **Storage** | Cerebrium Storage | Built-in file storage and artifact management |
-| **Deployment** | cerebrium.toml | One-file configuration for everything |
+### 1. Environment Setup
 
-## 🚀 Why Cerebrium?
-
-### The Problem
-Building production-grade AI agents is hard. You need:
-- **Long-running processes** (30-90s per roast)
-- **Parallel execution** (dozens of startups simultaneously)
-- **Graceful shutdown** (finish browser sessions before scaling down)
-- **Observability** (track every screenshot and decision)
-- **Global scaling** (handle YC batch drops)
-
-### The Solution
-Cerebrium provides the orchestration layer that makes agents reliable and scalable:
-
-| Capability | Why It Matters |
-|------------|----------------|
-| **Serverless containers** (not functions) | Each RoastBot needs 30-90s to open sites, take screenshots, call Gemini CU and Grok — Cerebrium keeps the container alive |
-| **Parallel replicas** | Run dozens of Browserbase sessions (one per startup) in parallel with `replicas = N` |
-| **Graceful shutdown** | `SIGTERM + response_grace_period` lets each Browserbase session finish before scaling down |
-| **Autoscaling** | Handle YC batch drops or run close to users for low latency |
-| **Observability** | Real-time monitoring and logging via Cerebrium dashboard |
-| **GPU toggle** | Flip `gpu = "A10G"` for on-device vision models — no infra rebuild |
-
-## 🛠️ Quick Start
-
-### 1. Prerequisites
+Copy the example environment file and fill in your API keys:
 
 ```bash
-# Install Cerebrium CLI
+cp env.example .env
+```
+
+Required environment variables:
+- `BROWSERBASE_API_KEY` - Get from [Browserbase](https://browserbase.com)
+- `GROK_API_KEY` - Get from [x.ai](https://x.ai)
+- `S3_BUCKET` - Your AWS S3 bucket name
+- `AWS_ACCESS_KEY_ID` - Your AWS access key
+- `AWS_SECRET_ACCESS_KEY` - Your AWS secret key
+
+### 2. Test Core Scraping Flow
+
+Test the scraping pipeline locally:
+
+```bash
+# Install dependencies
+pip install -r app/requirements.txt
+python -m playwright install chromium
+
+# Run the test script
+python test_scraping.py
+```
+
+This will test:
+- YC directory scraping (3 companies)
+- Website URL extraction from YC profiles
+- Website data extraction and screenshots
+- Grok roast generation
+
+### 3. Run Backend Locally
+
+```bash
+cd app
+uvicorn main:app --host 0.0.0.0 --port 5000
+```
+
+### 4. Run Frontend
+
+```bash
+cd ui
+npm install
+npm run dev
+```
+
+Visit `http://localhost:3000` to use the UI.
+
+## API Endpoints
+
+- `POST /run` - Start a new roast run
+- `GET /runs/{run_id}` - Get run status and results
+- `WS /stream/{run_id}` - WebSocket for real-time updates
+- `GET /health` - Health check
+- `GET /ready` - Ready check
+
+## Deployment
+
+### Deploy to Cerebrium
+
+1. Install Cerebrium CLI:
+```bash
 pip install cerebrium
-
-# Install Playwright browsers
-playwright install chromium
 ```
 
-### 2. Deploy to Cerebrium
-
-**That's it! No environment variables, no API keys, no external dependencies.**
-
+2. Deploy:
 ```bash
-# Deploy the application
 cerebrium deploy
 ```
 
-### 3. Test the API
+3. Set environment variables in Cerebrium dashboard
+
+4. Update frontend `VITE_API_BASE` to your Cerebrium URL
+
+## Project Structure
+
+```
+startup-roast-bot/
+├── app/                    # FastAPI backend
+│   ├── main.py            # Main FastAPI app with WebSocket
+│   ├── yc_scraper.py      # YC directory scraping
+│   ├── browserbase_client.py # Browserbase integration
+│   ├── playwright_bridge.py  # Playwright operations
+│   ├── llm_client.py      # Grok LLM client
+│   ├── storage.py         # S3 storage
+│   └── models.py          # Pydantic models
+├── ui/                    # Vite + React frontend
+├── test_scraping.py       # Test script
+├── Dockerfile            # Container config
+├── cerebrium.toml        # Cerebrium deployment config
+└── README.md
+```
+
+## Testing the Flow
+
+The core scraping flow works as follows:
+
+1. **YC Directory** (https://www.ycombinator.com/companies)
+   - Scrapes company profile URLs like `/companies/company-name`
+   - Optionally filters by batch (F25, S24, etc.)
+
+2. **YC Profile Pages** (https://www.ycombinator.com/companies/company-name)
+   - Extracts the actual website URL from each company's profile
+   - Handles various link patterns and UI layouts
+
+3. **Company Websites** (actual startup websites)
+   - Takes viewport screenshots
+   - Extracts page title, hero text, and CTA button text
+   - Saves artifacts to S3
+
+4. **AI Analysis**
+   - Sends page summary to Grok LLM
+   - Generates witty, constructive roasts
+   - Focuses on landing page UX/copy issues
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Browserbase Connection Failed**
+   - Check your `BROWSERBASE_API_KEY`
+   - Ensure you have an active Browserbase account
+
+2. **Grok API Errors**
+   - Verify your `GROK_API_KEY` is valid
+   - Check rate limits and usage
+
+3. **S3 Upload Failed**
+   - Verify AWS credentials and bucket permissions
+   - Ensure the S3 bucket exists
+
+4. **YC Scraping Issues**
+   - YC may have changed their UI structure
+   - Check the selectors in `yc_scraper.py`
+   - Consider adding delays for rate limiting
+
+### Debug Mode
+
+Enable debug logging by setting the log level in your environment:
 
 ```bash
-# Health check
-curl "https://api.aws.us-east-1.cerebrium.ai/v4/YOUR-PROJECT-ID/startup-roast-bot/"
-
-# Start a roast session
-curl -X POST "https://api.aws.us-east-1.cerebrium.ai/v4/YOUR-PROJECT-ID/startup-roast-bot/run" \
-  -H "Content-Type: application/json" \
-  -d '{"startup_url": "https://example.com"}'
-
-# Get session status
-curl "https://api.aws.us-east-1.cerebrium.ai/v4/YOUR-PROJECT-ID/startup-roast-bot/runs/{session_id}"
-
-# Stream real-time updates (WebSocket)
-wscat -c "wss://api.aws.us-east-1.cerebrium.ai/v4/YOUR-PROJECT-ID/startup-roast-bot/stream/{session_id}"
+export LOG_LEVEL=DEBUG
 ```
 
-## 📡 API Endpoints
-
-### `POST /run`
-Start a new roast session for a startup website.
-
-**Request:**
-```json
-{
-  "startup_url": "https://example.com",
-  "roast_style": "savage",
-  "focus_areas": ["design", "copy", "ux", "value_prop"]
-}
-```
-
-**Response:**
-```json
-{
-  "session_id": "uuid",
-  "status": "started",
-  "message": "Roast session started successfully"
-}
-```
-
-### `GET /runs/{session_id}`
-Get the status and results of a specific roast session.
-
-**Response:**
-```json
-{
-  "id": "uuid",
-  "startup_url": "https://example.com",
-  "status": "completed",
-  "created_at": "2024-01-01T00:00:00Z",
-  "completed_at": "2024-01-01T00:02:30Z",
-  "steps": [...],
-  "final_roast": "🔥 ROAST ALERT 🔥...",
-  "s3_screenshot_url": "https://bucket.s3.amazonaws.com/..."
-}
-```
-
-### `WebSocket /stream/{session_id}`
-Real-time updates for roast progress.
-
-**Message Format:**
-```json
-{
-  "type": "step",
-  "step": {
-    "timestamp": "2024-01-01T00:00:00Z",
-    "message": "Analyzing website with Gemini...",
-    "step_type": "info"
-  }
-}
-```
-
-## 🔄 How It Works
-
-1. **Screenshot Capture**: Playwright + Browserbase captures the startup website
-2. **Vision Analysis**: Gemini Computer Use analyzes the screenshot and identifies issues
-3. **Action Planning**: Gemini determines if additional screenshots are needed
-4. **Roast Generation**: Grok LLM creates engaging, constructive roast commentary
-5. **Artifact Storage**: Screenshots and traces are persisted to S3
-6. **Real-time Updates**: WebSocket streams progress to connected clients
-
-## 🎯 Demo Scenarios
-
-### Scenario 1: YC Batch Drop
-When a new YC batch drops, you can instantly scale to roast 100+ startups:
-
-```bash
-# Deploy with high replica count
-cerebrium deploy --replicas 50
-
-# Batch roast multiple startups
-for url in $(cat yc_batch_urls.txt); do
-  curl -X POST "https://your-deployment.cerebrium.ai/run" \
-    -d "{\"startup_url\": \"$url\"}"
-done
-```
-
-### Scenario 2: Real-time Dashboard
-Build a live dashboard that shows roasts streaming in:
-
-```javascript
-// Connect to WebSocket
-const ws = new WebSocket('wss://your-deployment.cerebrium.ai/stream/session-id');
-
-ws.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-  if (data.type === 'step') {
-    updateDashboard(data.step);
-  }
-};
-```
-
-## 🔧 Configuration
-
-### cerebrium.toml
-```toml
-[project]
-name = "startup-roast-bot"
-
-[deployment]
-replicas = 3
-min_replicas = 1
-max_replicas = 10
-response_grace_period = 30
-timeout = 300
-memory = "2Gi"
-cpu = "1"
-
-[env]
-BROWSERBASE_API_KEY = ""
-GEMINI_API_KEY = ""
-GROK_API_KEY = ""
-AWS_S3_BUCKET = "startup-roast-screenshots"
-```
-
-## 🎨 Frontend Options
-
-While the FastAPI backend is the main deliverable, you can add a frontend for demos:
-
-### Option 1: Next.js + Tailwind
-```bash
-npx create-next-app@latest roast-dashboard
-cd roast-dashboard
-npm install tailwindcss
-```
-
-### Option 2: Streamlit (Python)
-```python
-import streamlit as st
-import requests
-
-st.title("🔥 Startup Roast Bot")
-url = st.text_input("Enter startup URL")
-if st.button("Start Roast"):
-    response = requests.post("https://your-deployment.cerebrium.ai/run", 
-                           json={"startup_url": url})
-    st.json(response.json())
-```
-
-### Option 3: React + WebSocket
-```jsx
-function RoastDashboard() {
-  const [sessions, setSessions] = useState([]);
-  
-  useEffect(() => {
-    const ws = new WebSocket('wss://your-deployment.cerebrium.ai/stream/session-id');
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      setSessions(prev => [...prev, data]);
-    };
-  }, []);
-  
-  return <div>{/* Render sessions */}</div>;
-}
-```
-
-## 🚀 Production Considerations
-
-### Monitoring
-- **Cerebrium Dashboard**: Real-time metrics and logs
-- **S3 Artifacts**: Every screenshot and trace persisted
-- **WebSocket Connections**: Track active sessions
-
-### Scaling
-- **Auto-scaling**: Handles traffic spikes automatically
-- **Global Regions**: Deploy close to users for low latency
-- **Resource Limits**: Configure memory/CPU based on workload
-
-### Security
-- **API Keys**: Stored securely in Cerebrium environment
-- **S3 Access**: Proper IAM roles and bucket policies
-- **CORS**: Configured for your frontend domain
-
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Test with `cerebrium deploy`
+4. Test the scraping flow
 5. Submit a pull request
 
-## 📄 License
+## License
 
 MIT License - see LICENSE file for details.
-
-## 🙏 Acknowledgments
-
-- **Cerebrium** for the orchestration platform
-- **Browserbase** for cloud browser infrastructure
-- **Google DeepMind** for Gemini Computer Use
-- **xAI** for Grok LLM
-- **Playwright** for browser automation
-
----
-
-**Built with ❤️ to showcase the power of Cerebrium for production AI agents.**

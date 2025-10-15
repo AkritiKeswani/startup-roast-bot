@@ -7,22 +7,32 @@ name = "startup-roast-bot"
 python_version = "3.11"
 cuda = false
 gpu = false
-replicas = 3
+replicas = 1
 min_replicas = 1
 max_replicas = 10
-response_grace_period = 30
+response_grace_period = 180
 timeout = 300
-memory = "2Gi"
-cpu = "1"
+memory = "4Gi"
+cpu = "2"
 
 [cerebrium.runtime.custom]
-port = 8000
-entrypoint = "uvicorn main:app --host 0.0.0.0 --port 8000"
-healthcheck_endpoint = "/"
-readycheck_endpoint = "/"
+port = 5000
+entrypoint = "uvicorn app.main:app --host 0.0.0.0 --port 5000"
+healthcheck_endpoint = "/health"
+readycheck_endpoint = "/ready"
 
-[env]
-# No external APIs needed - everything runs on Cerebrium!
+[cerebrium.scaling]
+replicas = 1
+replica_concurrency = 1
+response_grace_period = 180
+
+[cerebrium.env]
+BROWSERBASE_API_KEY = "env:BROWSERBASE_API_KEY"
+GROK_API_KEY = "env:GROK_API_KEY"
+GROK_MODEL = "env:GROK_MODEL"
+S3_BUCKET = "env:S3_BUCKET"
+AWS_ACCESS_KEY_ID = "env:AWS_ACCESS_KEY_ID"
+AWS_SECRET_ACCESS_KEY = "env:AWS_SECRET_ACCESS_KEY"
 
 [build]
-requirements = ["requirements.txt"]
+requirements = ["app/requirements.txt"]
