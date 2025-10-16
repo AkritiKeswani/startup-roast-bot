@@ -3,6 +3,12 @@ Startup Roast Bot - FastAPI Backend
 A production-grade agent that roasts startup websites using Browserbase + Playwright + Grok.
 """
 
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
 import asyncio
 import json
 import uuid
@@ -122,7 +128,7 @@ async def run_roast(request: RunRequest):
     # Start roast process in background
     asyncio.create_task(execute_roast(run_id, request))
     
-    logger.info("Started roast run", run_id=run_id, source=request.source)
+    logger.info("Started roast run", extra={'run_id': run_id, 'source': request.source})
     
     return RunResponse(
         run_id=run_id,
@@ -173,7 +179,7 @@ async def execute_roast(run_id: str, request: RunRequest):
     
     try:
         # Create Browserbase session
-        logger.info("Creating Browserbase session", run_id=run_id)
+        logger.info("Creating Browserbase session", extra={'run_id': run_id})
         session_data = browserbase_client.create_session()
         session_id = session_data["id"]
         playwright_endpoint = session_data["playwrightWsEndpoint"]
@@ -302,12 +308,12 @@ async def execute_roast(run_id: str, request: RunRequest):
         run.completed_at = datetime.utcnow()
         
         await connection_manager.send_message(run_id, {"status": "finished"})
-        logger.info("Completed roast run", run_id=run_id)
+        logger.info("Completed roast run", extra={'run_id': run_id})
         
     except Exception as e:
         run.status = "failed"
         run.error_message = str(e)
-        logger.error("Failed roast run", run_id=run_id, error=str(e))
+        logger.error("Failed roast run", extra={'run_id': run_id, 'error': str(e)})
         
         await connection_manager.send_message(run_id, {
             "status": "failed",
