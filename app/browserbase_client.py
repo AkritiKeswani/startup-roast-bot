@@ -9,9 +9,14 @@ from logutil import setup_logger
 
 logger = setup_logger(__name__)
 
-BROWSERBASE_API_KEY = os.environ["BROWSERBASE_API_KEY"]
-BROWSERBASE_PROJECT_ID = os.environ["BROWSERBASE_PROJECT_ID"]
+BROWSERBASE_API_KEY = os.environ.get("BROWSERBASE_API_KEY")
+BROWSERBASE_PROJECT_ID = os.environ.get("BROWSERBASE_PROJECT_ID")
 BROWSERBASE_BASE_URL = "https://api.browserbase.com/v1"
+
+if not BROWSERBASE_API_KEY:
+    raise ValueError("BROWSERBASE_API_KEY environment variable is required")
+if not BROWSERBASE_PROJECT_ID:
+    raise ValueError("BROWSERBASE_PROJECT_ID environment variable is required")
 
 
 class BrowserbaseClient:
@@ -48,6 +53,9 @@ class BrowserbaseClient:
             
             return session_data
             
+        except requests.exceptions.HTTPError as e:
+            logger.error("HTTP error creating Browserbase session", extra={'status_code': e.response.status_code, 'response': e.response.text})
+            raise
         except Exception as e:
             logger.error("Failed to create Browserbase session", extra={'error': str(e)})
             raise
@@ -63,6 +71,7 @@ class BrowserbaseClient:
             response.raise_for_status()
             
             session_data = response.json()
+            # According to docs, the field should be "connectUrl" (camelCase)
             playwright_endpoint = session_data.get("connectUrl")
             
             if not playwright_endpoint:
@@ -71,6 +80,9 @@ class BrowserbaseClient:
             logger.info("Retrieved Playwright endpoint", extra={'session_id': session_id})
             return playwright_endpoint
             
+        except requests.exceptions.HTTPError as e:
+            logger.error("HTTP error getting Playwright endpoint", extra={'session_id': session_id, 'status_code': e.response.status_code, 'response': e.response.text})
+            raise
         except Exception as e:
             logger.error("Failed to get Playwright endpoint", extra={'session_id': session_id, 'error': str(e)})
             raise
@@ -88,6 +100,9 @@ class BrowserbaseClient:
             logger.info("Closed Browserbase session", extra={'session_id': session_id})
             return True
             
+        except requests.exceptions.HTTPError as e:
+            logger.error("HTTP error closing Browserbase session", extra={'session_id': session_id, 'status_code': e.response.status_code, 'response': e.response.text})
+            return False
         except Exception as e:
             logger.error("Failed to close Browserbase session", extra={'session_id': session_id, 'error': str(e)})
             return False

@@ -115,35 +115,56 @@ async def ready():
 @app.post("/run", response_model=RunResponse)
 async def run_roast(request: RunRequest):
     """Start a new roast run."""
-    run_id = str(uuid.uuid4())
-    
-    # Create run status
-    run_status = RunStatus(
-        run_id=run_id,
-        status="running",
-        created_at=datetime.utcnow()
-    )
-    runs[run_id] = run_status
-    
-    # Start roast process in background
-    asyncio.create_task(execute_roast(run_id, request))
-    
-    logger.info("Started roast run", extra={'run_id': run_id, 'source': request.source})
-    
-    return RunResponse(
-        run_id=run_id,
-        status="running",
-        stream_url=f"/stream/{run_id}"
-    )
+    try:
+        # Validate request
+        if request.source == "yc" and not request.yc:
+            raise HTTPException(status_code=400, detail="YC parameters required for YC source")
+        if request.source == "custom" and not request.custom:
+            raise HTTPException(status_code=400, detail="Custom parameters required for custom source")
+        if request.source == "custom" and not request.custom.get("urls"):
+            raise HTTPException(status_code=400, detail="URLs list cannot be empty for custom source")
+        
+        run_id = str(uuid.uuid4())
+        
+        # Create run status
+        run_status = RunStatus(
+            run_id=run_id,
+            status="running",
+            created_at=datetime.utcnow()
+        )
+        runs[run_id] = run_status
+        
+        # Start roast process in background
+        asyncio.create_task(execute_roast(run_id, request))
+        
+        logger.info("Started roast run", extra={'run_id': run_id, 'source': request.source})
+        
+        return RunResponse(
+            run_id=run_id,
+            status="running",
+            stream_url=f"/stream/{run_id}"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to start roast run", extra={'error': str(e)})
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/runs/{run_id}", response_model=RunStatus)
 async def get_run(run_id: str):
     """Get the status and results of a specific run."""
-    if run_id not in runs:
-        raise HTTPException(status_code=404, detail="Run not found")
-    
-    return runs[run_id]
+    try:
+        if run_id not in runs:
+            raise HTTPException(status_code=404, detail="Run not found")
+        
+        return runs[run_id]
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to get run", extra={'run_id': run_id, 'error': str(e)})
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.websocket("/stream/{run_id}")
@@ -182,7 +203,7 @@ async def execute_roast(run_id: str, request: RunRequest):
         logger.info("Creating Browserbase session", extra={'run_id': run_id})
         session_data = browserbase_client.create_session()
         session_id = session_data["id"]
-        playwright_endpoint = session_data["playwrightWsEndpoint"]
+        playwright_endpoint = session_data["connectUrl"]
         
         # Initialize Playwright bridge
         playwright_bridge = PlaywrightBridge(playwright_endpoint)

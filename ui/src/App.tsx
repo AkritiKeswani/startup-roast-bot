@@ -21,7 +21,12 @@ export default function App() {
   const [style, setStyle] = useState("spicy");
   const [rows, setRows] = useState<CompanyResult[]>([]);
   const [isRunning, setIsRunning] = useState(false);
+  const [logs, setLogs] = useState<string[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
+
+  const addLog = (message: string) => {
+    setLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
+  };
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -32,6 +37,7 @@ export default function App() {
     
     setIsRunning(true);
     setRows([]);
+    setLogs([]);
     
     const body = mode === "yc"
       ? { 
@@ -66,25 +72,33 @@ export default function App() {
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
       
-      ws.onopen = () => {};
+      ws.onopen = () => addLog("WebSocket connected");
       ws.onmessage = ev => {
         const msg = JSON.parse(ev.data);
         if (msg.company) {
           setRows(x => [msg, ...x]);
+          addLog(`Processed: ${msg.company.name}`);
         }
         if (msg.status === "finished") {
+          addLog("Run completed!");
           setIsRunning(false);
         }
         if (msg.status === "failed") {
+          addLog(`Run failed: ${msg.error_reason || 'Unknown error'}`);
           setIsRunning(false);
         }
       };
-      ws.onerror = () => setIsRunning(false);
+      ws.onerror = (error) => {
+        addLog("WebSocket error occurred");
+        setIsRunning(false);
+      };
       ws.onclose = () => {
+        addLog("WebSocket disconnected");
         setIsRunning(false);
       };
       
     } catch (error) {
+      addLog(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setIsRunning(false);
     }
   }
@@ -207,10 +221,12 @@ export default function App() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border shadow-sm">
-          <div className="p-4 border-b">
-            <h2 className="text-xl font-semibold">Results</h2>
-          </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="md:col-span-2">
+            <div className="bg-white rounded-xl border shadow-sm">
+              <div className="p-4 border-b">
+                <h2 className="text-xl font-semibold">Results</h2>
+              </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50">
@@ -274,6 +290,18 @@ export default function App() {
                 )}
                 </tbody>
               </table>
+            </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border shadow-sm">
+            <div className="p-4 border-b">
+              <h2 className="text-xl font-semibold">Logs</h2>
+            </div>
+            <div className="p-4">
+              <pre className="text-xs whitespace-pre-wrap max-h-64 overflow-auto bg-gray-50 p-3 rounded">
+                {logs.length === 0 ? "No logs yet..." : logs.join("\n")}
+              </pre>
             </div>
           </div>
         </div>
