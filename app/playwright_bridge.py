@@ -5,7 +5,7 @@ Playwright bridge for website scraping and screenshots.
 import asyncio
 from typing import Dict, Optional, Tuple
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
-from .logutil import setup_logger
+from logutil import setup_logger
 
 logger = setup_logger(__name__)
 

@@ -14,16 +14,16 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from .models import (
+from models import (
     RunRequest, RunResponse, RunStatus, CompanyResult, 
     WebSocketMessage, HealthResponse
 )
-from .browserbase_client import browserbase_client
-from .playwright_bridge import PlaywrightBridge
-from .yc_scraper import YCScraper
-from .llm_client import generate_roast
-from .storage import storage
-from .logutil import setup_logger
+from browserbase_client import browserbase_client
+from playwright_bridge import PlaywrightBridge
+from yc_scraper import YCScraper
+from llm_client import generate_roast
+from storage import storage
+from logutil import setup_logger
 
 logger = setup_logger(__name__)
 
@@ -60,10 +60,15 @@ runs: Dict[str, RunStatus] = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan management."""
-    logger.info("🚀 Startup Roast Bot starting...")
+    """Application lifespan management - showcasing Cerebrium's orchestration."""
+    logger.info("🚀 Startup Roast Bot starting on Cerebrium...")
+    logger.info("🔥 Leveraging Cerebrium's platform capabilities:")
+    logger.info("   - Custom runtime with WebSocket support")
+    logger.info("   - Built-in storage (no AWS S3 needed)")
+    logger.info("   - Serverless scaling for concurrent runs")
+    logger.info("   - Long-running task support (30-90s workflows)")
     yield
-    logger.info("👋 Graceful shutdown complete")
+    logger.info("👋 Graceful shutdown complete - Cerebrium handles cleanup!")
 
 
 app = FastAPI(

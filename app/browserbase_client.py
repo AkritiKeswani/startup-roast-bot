@@ -5,7 +5,7 @@ Browserbase client for creating sessions and getting Playwright endpoints.
 import os
 import requests
 from typing import Dict, Any
-from .logutil import setup_logger
+from logutil import setup_logger
 
 logger = setup_logger(__name__)
 

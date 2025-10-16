@@ -6,7 +6,7 @@ import os
 import json
 import requests
 from typing import Dict
-from .logutil import setup_logger
+from logutil import setup_logger
 
 logger = setup_logger(__name__)
 
@@ -84,6 +84,6 @@ def generate_roast(summary: Dict[str, str], style: str = "spicy") -> str:
         return text
         
     except Exception as e:
-        logger.error("Failed to generate roast", error=str(e), style=style)
+        logger.error("Failed to generate roast", extra={'error': str(e), 'style': style})
         # Fallback roast
         return f"Your landing page needs work, but at least it loads! 🚀"

@@ -1,6 +1,17 @@
 # Startup Roast Bot
 
-AI-powered startup website analyzer and roaster using Browserbase + Playwright + Grok.
+**Showcasing Cerebrium's Platform Capabilities** - AI-powered startup website analyzer and roaster.
+
+## Why Cerebrium?
+
+This project demonstrates Cerebrium's unique capabilities:
+
+- **Custom Runtime with WebSocket Support** - Real-time streaming of results
+- **Built-in Storage** - No need for external AWS S3 or complex storage setup
+- **AI Model Hosting** - Can host and scale AI models directly on Cerebrium
+- **Serverless Scaling** - Handles multiple concurrent scraping sessions
+- **Long-running Tasks** - Perfect for 30-90 second scraping workflows
+- **Global CDN** - Fast delivery of screenshots and artifacts
 
 ## Architecture
 
@@ -13,10 +24,10 @@ This project implements a complete scraping and analysis pipeline:
 
 ## Tech Stack
 
-- **Backend**: FastAPI + Cerebrium (custom runtime with WebSocket support)
+- **Backend**: FastAPI + **Cerebrium** (custom runtime with WebSocket support)
 - **Browser Automation**: Browserbase + Playwright (CDP)
 - **AI**: Grok LLM for roast generation
-- **Storage**: AWS S3 for screenshots and artifacts
+- **Storage**: **Cerebrium's built-in storage** (no AWS needed!)
 - **Frontend**: Vite + React + Tailwind CSS
 
 ## Quick Start
