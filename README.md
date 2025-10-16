@@ -1,15 +1,15 @@
-# 🔥 Startup Roast Bot
+# Startup Roast Bot
 
-An AI-powered agent that roasts startup landing pages using Browserbase + Playwright + Grok, deployed on Cerebrium.
+An AI-powered agent that analyzes startup landing pages and generates witty critiques using Browserbase + Playwright + Grok, deployed on Cerebrium.
 
-## 🚀 Quick Demo
+## Quick Demo
 
 1. **YC Mode**: Scrapes YC directory (optionally filter by batch like "F25") → visits each company's website → generates witty roasts
 2. **Custom Mode**: Enter any URLs → get instant landing page critiques
 3. **Real-time**: WebSocket streaming shows results as they're processed
 4. **Screenshots**: Each roast includes a screenshot of the landing page
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 Frontend (Vite + React + Tailwind) 
@@ -19,11 +19,11 @@ Cerebrium FastAPI Backend
 Browserbase + Playwright
     ↓ HTTP
 Grok API (X.AI)
-    ↓ S3
-AWS S3 (screenshots + traces)
+    ↓ Data URLs
+Screenshots embedded directly in responses
 ```
 
-## 🛠️ Local Development
+## Local Development
 
 ### Prerequisites
 
@@ -31,7 +31,6 @@ AWS S3 (screenshots + traces)
 - Node.js 18+
 - Browserbase account
 - Grok API access (X.AI)
-- AWS S3 bucket (optional for local dev)
 
 ### Backend Setup
 
@@ -76,7 +75,7 @@ AWS S3 (screenshots + traces)
    # Set VITE_API_BASE=http://localhost:5000
    ```
 
-## 🚀 Cerebrium Deployment
+## Cerebrium Deployment
 
 ### 1. Install Cerebrium CLI
 
@@ -90,9 +89,6 @@ Set these environment variables in Cerebrium dashboard:
 - `BROWSERBASE_API_KEY`
 - `BROWSERBASE_PROJECT_ID` 
 - `GROK_API_KEY`
-- `S3_BUCKET`
-- `AWS_ACCESS_KEY_ID`
-- `AWS_SECRET_ACCESS_KEY`
 
 ### 3. Deploy
 
@@ -108,7 +104,7 @@ Set `VITE_API_BASE` to your Cerebrium URL:
 VITE_API_BASE=https://your-deployment.cerebrium.app
 ```
 
-## 📋 API Endpoints
+## API Endpoints
 
 ### POST /run
 Start a new roast run.
@@ -148,7 +144,7 @@ Real-time updates as companies are processed:
 }
 ```
 
-## 🎯 Features
+## Features
 
 - **YC Integration**: Scrapes YC directory with batch filtering
 - **Smart Extraction**: DOM-first extraction of title, hero, CTA
@@ -158,13 +154,13 @@ Real-time updates as companies are processed:
 - **Error Handling**: Graceful failures with detailed logging
 - **Scalable**: Cerebrium's serverless architecture
 
-## 🔧 Configuration
+## Configuration
 
 ### Roast Styles
 
-- **Spicy** 🌶️: Playful jabs with edge
-- **Kind** 😊: Gentle, encouraging feedback  
-- **Deadpan** 😐: Dry, minimal, ironic
+- **Spicy**: Playful jabs with edge
+- **Kind**: Gentle, encouraging feedback  
+- **Deadpan**: Dry, minimal, ironic
 
 ### YC Batch Filtering
 
@@ -173,7 +169,7 @@ Supports YC batch codes like:
 - `S24` (Summer 2024)
 - `W24` (Winter 2024)
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
@@ -185,11 +181,7 @@ Supports YC batch codes like:
    - Verify `GROK_API_KEY` is valid
    - Check rate limits and quotas
 
-3. **S3 upload fails**:
-   - Verify AWS credentials and bucket permissions
-   - App falls back to data URLs for local dev
-
-4. **WebSocket disconnects**:
+3. **WebSocket disconnects**:
    - Check Cerebrium deployment logs
    - Verify CORS settings
 
@@ -197,7 +189,7 @@ Supports YC batch codes like:
 
 Backend logs are available in Cerebrium dashboard. Frontend logs appear in browser console and the logs panel.
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch
@@ -205,11 +197,11 @@ Backend logs are available in Cerebrium dashboard. Frontend logs appear in brows
 4. Test locally and on Cerebrium
 5. Submit a pull request
 
-## 📄 License
+## License
 
 MIT License - see LICENSE file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - [Cerebrium](https://cerebrium.ai) for serverless ML hosting
 - [Browserbase](https://browserbase.com) for browser automation

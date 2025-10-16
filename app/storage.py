@@ -1,67 +1,35 @@
 """
-S3 storage for artifacts - using AWS S3 for storing screenshots and traces.
+Simple storage for artifacts - using data URLs for screenshots and in-memory for traces.
 """
 
-import os
 import json
 import base64
-import boto3
 from typing import Optional
-from botocore.exceptions import ClientError
 from logutil import setup_logger
 
 logger = setup_logger(__name__)
 
 
-class S3Storage:
-    """S3 storage for saving artifacts."""
+class SimpleStorage:
+    """Simple storage using data URLs for screenshots."""
     
     def __init__(self):
-        self.s3_client = boto3.client(
-            's3',
-            aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
-            aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
-            region_name=os.environ.get('AWS_REGION', 'us-east-1')
-        )
-        self.bucket_name = os.environ.get('S3_BUCKET')
-        
-        if not self.bucket_name:
-            logger.warning("S3_BUCKET not set, using fallback storage")
-            self.bucket_name = None
+        logger.info("Using simple data URL storage for screenshots")
     
     def put_bytes(self, key: str, data: bytes, content_type: str = "application/octet-stream") -> str:
-        """Save bytes to S3 and return the URL."""
+        """Convert bytes to data URL."""
         try:
-            if not self.bucket_name:
-                # Fallback to data URL for local development
-                if content_type.startswith("image/"):
-                    b64_data = base64.b64encode(data).decode('utf-8')
-                    return f"data:{content_type};base64,{b64_data}"
-                else:
-                    return f"fallback://storage/{key}"
-            
-            # Upload to S3
-            self.s3_client.put_object(
-                Bucket=self.bucket_name,
-                Key=key,
-                Body=data,
-                ContentType=content_type
-            )
-            
-            # Generate public URL
-            url = f"https://{self.bucket_name}.s3.amazonaws.com/{key}"
-            logger.info("Uploaded to S3", key=key, size=len(data))
-            return url
-                
-        except ClientError as e:
-            logger.error("Failed to upload to S3", key=key, error=str(e))
-            # Fallback to data URL for images
             if content_type.startswith("image/"):
                 b64_data = base64.b64encode(data).decode('utf-8')
-                return f"data:{content_type};base64,{b64_data}"
-            return f"error://storage/{key}"
+                data_url = f"data:{content_type};base64,{b64_data}"
+                logger.info("Created data URL for image", key=key, size=len(data))
+                return data_url
+            else:
+                # For non-images, return a simple identifier
+                return f"data://{key}"
+                
         except Exception as e:
-            logger.error("Failed to upload to S3", key=key, error=str(e))
+            logger.error("Failed to create data URL", key=key, error=str(e))
             return f"error://storage/{key}"
     
     def put_json(self, key: str, data: dict) -> str:
