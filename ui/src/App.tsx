@@ -15,18 +15,11 @@ interface CompanyResult {
 
 export default function App() {
   const [mode, setMode] = useState<"yc" | "custom">("yc");
-  const [batch, setBatch] = useState("F25");
-  const [limit, setLimit] = useState(24);
   const [urls, setUrls] = useState("");
   const [style, setStyle] = useState("spicy");
   const [rows, setRows] = useState<CompanyResult[]>([]);
   const [isRunning, setIsRunning] = useState(false);
-  const [logs, setLogs] = useState<string[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
-
-  const addLog = (message: string) => {
-    setLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`]);
-  };
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -37,12 +30,10 @@ export default function App() {
     
     setIsRunning(true);
     setRows([]);
-    setLogs([]);
     
     const body = mode === "yc"
       ? { 
           source: "yc", 
-          yc: { batch: batch || null, limit }, 
           style, 
           max_steps: 6 
         }
@@ -54,7 +45,6 @@ export default function App() {
         };
 
     try {
-      addLog("Starting roast run...");
       const r = await fetch(`${API}/run`, {
         method: "POST", 
         headers: { "Content-Type": "application/json" }, 
@@ -66,39 +56,32 @@ export default function App() {
       }
       
       const j = await r.json();
-      addLog(`Run started: ${j.run_id}`);
       
       const wsUrl = `${API.replace(/^http/, "ws")}${j.stream_url}`;
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
       
-      ws.onopen = () => addLog("WebSocket connected");
+      ws.onopen = () => {};
       ws.onmessage = ev => {
         const msg = JSON.parse(ev.data);
         if (msg.company) {
           setRows(x => [msg, ...x]);
-          addLog(`Processed: ${msg.company.name}`);
         }
         if (msg.status === "finished") {
-          addLog("Run completed!");
           setIsRunning(false);
         }
         if (msg.status === "failed") {
-          addLog(`Run failed: ${msg.error_reason || 'Unknown error'}`);
           setIsRunning(false);
         }
       };
       ws.onerror = (error) => {
-        addLog("WebSocket error occurred");
         setIsRunning(false);
       };
       ws.onclose = () => {
-        addLog("WebSocket disconnected");
         setIsRunning(false);
       };
       
     } catch (error) {
-      addLog(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setIsRunning(false);
     }
   }
@@ -115,7 +98,7 @@ export default function App() {
     <div className="mx-auto max-w-6xl p-6 space-y-6">
       <div className="text-center">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">🔥 Startup Roast Bot</h1>
-        <p className="text-gray-600">Enter a URL of a company you'd like to critique or choose any YC company, with option to select from a recent batch</p>
+        <p className="text-gray-600">Get a random YC company roasted, or enter custom URLs to critique</p>
       </div>
 
       <div className="space-y-4">
@@ -145,31 +128,10 @@ export default function App() {
             </div>
 
             {mode === "yc" ? (
-              <div className="grid gap-3 md:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Batch (optional)
-                  </label>
-                  <input 
-                    className="input" 
-                    placeholder="e.g. F25, S24" 
-                    value={batch} 
-                    onChange={e => setBatch(e.target.value)} 
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Limit
-                  </label>
-                  <input 
-                    className="input" 
-                    type="number" 
-                    value={limit} 
-                    onChange={e => setLimit(parseInt(e.target.value || "24"))}
-                    min="1"
-                    max="100"
-                  />
-                </div>
+              <div className="p-4 bg-blue-50 rounded-lg">
+                <p className="text-blue-800 text-sm">
+                  🎲 <strong>Random YC Company:</strong> We'll pick a random company from the YC directory and roast their landing page!
+                </p>
               </div>
             ) : (
               <div>
@@ -294,16 +256,6 @@ export default function App() {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border shadow-sm">
-            <div className="p-4 border-b">
-              <h2 className="text-xl font-semibold">Logs</h2>
-            </div>
-            <div className="p-4">
-              <pre className="text-xs whitespace-pre-wrap max-h-64 overflow-auto bg-gray-50 p-3 rounded">
-                {logs.length === 0 ? "No logs yet..." : logs.join("\n")}
-              </pre>
-            </div>
-          </div>
         </div>
       </div>
     </div>

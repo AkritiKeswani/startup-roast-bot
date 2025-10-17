@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Simple test to see what's happening with Browserbase without logging issues.
+Test YC scraper directly to see what's happening.
 """
 import asyncio
 import requests
@@ -10,56 +10,48 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-async def test_browserbase():
+async def test_yc_scraper():
     try:
+        print("🧪 Testing YC scraper...")
+        
         # Get credentials
         api_key = os.getenv('BROWSERBASE_API_KEY')
         project_id = os.getenv('BROWSERBASE_PROJECT_ID')
-        
-        print(f"API Key: {api_key[:10]}...")
-        print(f"Project ID: {project_id}")
         
         # Create session
         headers = {'x-bb-api-key': api_key, 'Content-Type': 'application/json'}
         payload = {'projectId': project_id}
         
-        print("Creating Browserbase session...")
+        print("📡 Creating Browserbase session...")
         response = requests.post('https://api.browserbase.com/v1/sessions', headers=headers, json=payload)
-        print(f"Response status: {response.status_code}")
-        
-        if response.status_code not in [200, 201]:
-            print(f"Error: {response.text}")
-            return
-            
         session_data = response.json()
         connect_url = session_data['connectUrl']
         print(f"✅ Session created: {session_data['id']}")
-        print(f"Connect URL: {connect_url[:50]}...")
         
-        # Test Playwright connection
-        print("Connecting with Playwright...")
+        # Connect with Playwright
         playwright = await async_playwright().start()
         browser = await playwright.chromium.connect_over_cdp(connect_url)
-        print("✅ Playwright connected")
-        
-        # Use default context and page as recommended
         context = browser.contexts[0] if browser.contexts else await browser.new_context()
         page = context.pages[0] if context.pages else await context.new_page()
         
-        # Test with a fast website
-        print("Testing navigation to example.com...")
-        await page.goto('https://example.com/', timeout=30000)
-        title = await page.title()
-        print(f"✅ Page loaded: {title}")
+        # Test YC directory
+        print("🌐 Testing YC directory...")
+        await page.goto('https://www.ycombinator.com/companies', timeout=30000)
         
-        # Test screenshot
-        print("Taking screenshot...")
-        screenshot = await page.screenshot()
-        print(f"✅ Screenshot taken: {len(screenshot)} bytes")
+        # Look for company links
+        company_links = await page.query_selector_all('a[href*="/companies/"]')
+        print(f"Found {len(company_links)} company links")
+        
+        if company_links:
+            # Get the first few links
+            for i, link in enumerate(company_links[:5]):
+                href = await link.get_attribute('href')
+                text = await link.text_content()
+                print(f"  {i+1}. {text} -> {href}")
         
         await browser.close()
         await playwright.stop()
-        print("✅ Test completed successfully")
+        print("✅ Test completed")
         
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -67,4 +59,4 @@ async def test_browserbase():
         traceback.print_exc()
 
 if __name__ == "__main__":
-    asyncio.run(test_browserbase())
+    asyncio.run(test_yc_scraper())

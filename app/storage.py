@@ -29,7 +29,7 @@ class SimpleStorage:
                 return f"data://{key}"
                 
         except Exception as e:
-            logger.error("Failed to create data URL", key=key, error=str(e))
+            logger.error("Failed to create data URL", extra={'extra_fields': {'key': key, 'error': str(e)}})
             return f"error://storage/{key}"
     
     def put_json(self, key: str, data: dict) -> str:
@@ -60,9 +60,9 @@ class SimpleStorage:
             )
             return url
         except Exception as e:
-            logger.error("Failed to generate signed URL", key=key, error=str(e))
+            logger.error("Failed to generate signed URL", extra={'extra_fields': {'key': key, 'error': str(e)}})
             return f"error://storage/{key}"
 
 
 # Global storage instance
-storage = S3Storage()
+storage = SimpleStorage()

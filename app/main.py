@@ -43,19 +43,19 @@ class ConnectionManager:
     async def connect(self, websocket: WebSocket, run_id: str):
         await websocket.accept()
         self.active_connections[run_id] = websocket
-        logger.info("WebSocket connected", run_id=run_id)
+        logger.info("WebSocket connected", extra={'extra_fields': {'run_id': run_id}})
     
     def disconnect(self, run_id: str):
         if run_id in self.active_connections:
             del self.active_connections[run_id]
-            logger.info("WebSocket disconnected", run_id=run_id)
+            logger.info("WebSocket disconnected", extra={'extra_fields': {'run_id': run_id}})
     
     async def send_message(self, run_id: str, message: dict):
         if run_id in self.active_connections:
             try:
                 await self.active_connections[run_id].send_text(json.dumps(message))
             except Exception as e:
-                logger.warning("Failed to send WebSocket message", run_id=run_id, error=str(e))
+                logger.warning("Failed to send WebSocket message", extra={'extra_fields': {'run_id': run_id, 'error': str(e)}})
                 self.disconnect(run_id)
 
 
@@ -117,8 +117,6 @@ async def run_roast(request: RunRequest):
     """Start a new roast run."""
     try:
         # Validate request
-        if request.source == "yc" and not request.yc:
-            raise HTTPException(status_code=400, detail="YC parameters required for YC source")
         if request.source == "custom" and not request.custom:
             raise HTTPException(status_code=400, detail="Custom parameters required for custom source")
         if request.source == "custom" and not request.custom.get("urls"):
@@ -137,7 +135,7 @@ async def run_roast(request: RunRequest):
         # Start roast process in background
         asyncio.create_task(execute_roast(run_id, request))
         
-        logger.info("Started roast run", extra={'run_id': run_id, 'source': request.source})
+        logger.info("Started roast run", extra={'extra_fields': {'run_id': run_id, 'source': request.source}})
         
         return RunResponse(
             run_id=run_id,
@@ -163,7 +161,7 @@ async def get_run(run_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("Failed to get run", extra={'run_id': run_id, 'error': str(e)})
+        logger.error("Failed to get run", extra={'extra_fields': {'run_id': run_id, 'error': str(e)}})
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -200,7 +198,7 @@ async def execute_roast(run_id: str, request: RunRequest):
     
     try:
         # Create Browserbase session
-        logger.info("Creating Browserbase session", extra={'run_id': run_id})
+        logger.info("Creating Browserbase session", extra={'extra_fields': {'run_id': run_id}})
         session_data = browserbase_client.create_session()
         session_id = session_data["id"]
         playwright_endpoint = session_data["connectUrl"]
@@ -212,45 +210,38 @@ async def execute_roast(run_id: str, request: RunRequest):
         # Get company URLs based on source
         company_urls = []
         if request.source == "yc":
-            # YC Mode: Scrape YC directory → get profile URLs → extract website URLs
+            # YC Mode: Pick ONE random company from YC directory
             yc_scraper = YCScraper(playwright_endpoint)
             await yc_scraper.connect()
             
-            yc_params = request.yc or {}
-            batch = yc_params.get("batch")
-            limit = yc_params.get("limit", 24)
+            logger.info("Picking a random YC company", extra={'extra_fields': {}})
+            profile_urls = await yc_scraper.scrape_company_urls(limit=1)  # Just get 1 random company
+            logger.info(f"Found {len(profile_urls)} YC profile URLs", extra={'extra_fields': {'count': len(profile_urls)}})
             
-            logger.info("Scraping YC directory for company profiles", batch=batch, limit=limit)
-            profile_urls = await yc_scraper.scrape_company_urls(batch, limit)
-            logger.info(f"Found {len(profile_urls)} YC profile URLs")
-            
-            await yc_scraper.close()
-            
-            # Now extract website URLs from each YC profile
-            logger.info("Extracting website URLs from YC profiles")
-            for i, profile_url in enumerate(profile_urls):
-                logger.info(f"Processing YC profile {i+1}/{len(profile_urls)}: {profile_url}")
+            if profile_urls:
+                profile_url = profile_urls[0]
+                logger.info(f"Processing YC profile: {profile_url}", extra={'extra_fields': {'profile_url': profile_url}})
                 
                 if await playwright_bridge.goto(profile_url):
                     website_url = await playwright_bridge.extract_website_url(profile_url)
                     if website_url:
                         company_urls.append(website_url)
-                        logger.info(f"✅ Extracted website: {website_url}")
+                        logger.info(f"✅ Extracted website: {website_url}", extra={'extra_fields': {'website_url': website_url}})
                     else:
-                        logger.warning(f"⚠️ No website URL found for: {profile_url}")
+                        logger.warning(f"⚠️ No website URL found for: {profile_url}", extra={'extra_fields': {'profile_url': profile_url}})
                 else:
-                    logger.error(f"❌ Failed to load YC profile: {profile_url}")
+                    logger.error(f"❌ Failed to load YC profile: {profile_url}", extra={'extra_fields': {'profile_url': profile_url}})
             
-            logger.info(f"Successfully extracted {len(company_urls)} website URLs from YC profiles")
+            await yc_scraper.close()
             
         elif request.source == "custom":
             # Custom Mode: Use provided URLs directly
             custom_params = request.custom or {}
             company_urls = custom_params.get("urls", [])
-            logger.info(f"Using {len(company_urls)} custom URLs")
+            logger.info(f"Using {len(company_urls)} custom URLs", extra={'extra_fields': {'count': len(company_urls)}})
         
         run.total_companies = len(company_urls)
-        logger.info("Found companies to process", run_id=run_id, count=len(company_urls))
+        logger.info("Found companies to process", extra={'extra_fields': {'run_id': run_id, 'count': len(company_urls)}})
         
         # Process each company
         for i, website_url in enumerate(company_urls):
@@ -308,15 +299,19 @@ async def execute_roast(run_id: str, request: RunRequest):
                 })
                 
                 logger.info("Processed company", 
-                           run_id=run_id, 
-                           company=company_slug, 
-                           progress=f"{i+1}/{len(company_urls)}")
+                           extra={'extra_fields': {
+                               'run_id': run_id, 
+                               'company': company_slug, 
+                               'progress': f"{i+1}/{len(company_urls)}"
+                           }})
                 
             except Exception as e:
                 logger.error("Failed to process company", 
-                           run_id=run_id, 
-                           website=website_url, 
-                           error=str(e))
+                           extra={'extra_fields': {
+                               'run_id': run_id, 
+                               'website': website_url, 
+                               'error': str(e)
+                           }})
                 
                 await send_company_result(run_id, {
                     "company": {"name": website_url, "website": website_url},
@@ -329,12 +324,12 @@ async def execute_roast(run_id: str, request: RunRequest):
         run.completed_at = datetime.utcnow()
         
         await connection_manager.send_message(run_id, {"status": "finished"})
-        logger.info("Completed roast run", extra={'run_id': run_id})
+        logger.info("Completed roast run", extra={'extra_fields': {'run_id': run_id}})
         
     except Exception as e:
         run.status = "failed"
         run.error_message = str(e)
-        logger.error("Failed roast run", extra={'run_id': run_id, 'error': str(e)})
+        logger.error("Failed roast run", extra={'extra_fields': {'run_id': run_id, 'error': str(e)}})
         
         await connection_manager.send_message(run_id, {
             "status": "failed",
@@ -342,7 +337,11 @@ async def execute_roast(run_id: str, request: RunRequest):
         })
     
     finally:
-        # Clean up Browserbase session
+        # Clean up resources
+        try:
+            await playwright_bridge.close()
+        except:
+            pass
         try:
             browserbase_client.close_session(session_id)
         except:

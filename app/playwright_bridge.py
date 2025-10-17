@@ -24,16 +24,18 @@ class PlaywrightBridge:
         try:
             playwright = await async_playwright().start()
             self.browser = await playwright.chromium.connect_over_cdp(self.playwright_ws_endpoint)
-            self.context = await self.browser.new_context(
+            
+            # Use default context and page as recommended by Browserbase docs
+            self.context = self.browser.contexts[0] if self.browser.contexts else await self.browser.new_context(
                 viewport={"width": 1280, "height": 720},
                 user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
             )
-            self.page = await self.context.new_page()
+            self.page = self.context.pages[0] if self.context.pages else await self.context.new_page()
             
             logger.info("Connected to Playwright via CDP")
             
         except Exception as e:
-            logger.error("Failed to connect to Playwright", error=str(e))
+            logger.error("Failed to connect to Playwright", extra={'extra_fields': {'error': str(e)}})
             raise
     
     async def goto(self, url: str, timeout: int = 30000) -> bool:
@@ -42,14 +44,14 @@ class PlaywrightBridge:
             if not self.page:
                 raise RuntimeError("Playwright not connected")
             
-            logger.info("Navigating to URL", url=url)
+            logger.info("Navigating to URL", extra={'extra_fields': {'url': url}})
             await self.page.goto(url, timeout=timeout, wait_until="domcontentloaded")
             await asyncio.sleep(0.3)  # Short wait for page to settle
             
             return True
             
         except Exception as e:
-            logger.error("Failed to navigate to URL", url=url, error=str(e))
+            logger.error("Failed to navigate to URL", extra={'extra_fields': {'url': url, 'error': str(e)}})
             return False
     
     async def screenshot(self, full_page: bool = False) -> Optional[bytes]:
@@ -63,11 +65,11 @@ class PlaywrightBridge:
                 type="png"
             )
             
-            logger.info("Screenshot taken", size=len(screenshot_data), full_page=full_page)
+            logger.info("Screenshot taken", extra={'extra_fields': {'size': len(screenshot_data), 'full_page': full_page}})
             return screenshot_data
             
         except Exception as e:
-            logger.error("Failed to take screenshot", error=str(e))
+            logger.error("Failed to take screenshot", extra={'extra_fields': {'error': str(e)}})
             return None
     
     async def extract_summary(self) -> Dict[str, str]:
@@ -113,15 +115,16 @@ class PlaywrightBridge:
                 "cta": cta
             }
             
-            logger.info("Extracted page summary", 
-                       title_length=len(title), 
-                       hero_length=len(hero), 
-                       cta_length=len(cta))
+            logger.info("Extracted page summary", extra={'extra_fields': {
+                       'title_length': len(title), 
+                       'hero_length': len(hero), 
+                       'cta_length': len(cta)
+                       }})
             
             return summary
             
         except Exception as e:
-            logger.error("Failed to extract page summary", error=str(e))
+            logger.error("Failed to extract page summary", extra={'extra_fields': {'error': str(e)}})
             return {"title": "", "hero": "", "cta": ""}
     
     async def extract_website_url(self, yc_profile_url: str) -> Optional[str]:
@@ -187,16 +190,18 @@ class PlaywrightBridge:
                 except:
                     pass
             
-            logger.info("Extracted website URL", 
-                       yc_profile=yc_profile_url, 
-                       website_url=website_url)
+            logger.info("Extracted website URL", extra={'extra_fields': {
+                       'yc_profile': yc_profile_url, 
+                       'website_url': website_url
+                       }})
             
             return website_url
             
         except Exception as e:
-            logger.error("Failed to extract website URL", 
-                        yc_profile=yc_profile_url, 
-                        error=str(e))
+            logger.error("Failed to extract website URL", extra={'extra_fields': {
+                        'yc_profile': yc_profile_url, 
+                        'error': str(e)
+                        }})
             return None
     
     async def close(self) -> None:
@@ -210,4 +215,4 @@ class PlaywrightBridge:
             logger.info("Closed Playwright connection")
             
         except Exception as e:
-            logger.error("Failed to close Playwright connection", error=str(e))
+            logger.error("Failed to close Playwright connection", extra={'extra_fields': {'error': str(e)}})

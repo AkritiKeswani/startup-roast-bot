@@ -3,6 +3,7 @@ YC directory scraping functionality.
 """
 
 import asyncio
+import random
 from typing import List, Optional
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 from logutil import setup_logger
@@ -33,7 +34,7 @@ class YCScraper:
             logger.info("Connected to Playwright for YC scraping")
             
         except Exception as e:
-            logger.error("Failed to connect to Playwright for YC scraping", error=str(e))
+            logger.error("Failed to connect to Playwright for YC scraping", extra={'extra_fields': {'error': str(e)}})
             raise
     
     async def scrape_company_urls(self, batch: Optional[str] = None, limit: int = 24) -> List[str]:
@@ -67,7 +68,7 @@ class YCScraper:
             return profile_urls
             
         except Exception as e:
-            logger.error("Failed to scrape company URLs", error=str(e))
+            logger.error("Failed to scrape company URLs", extra={'extra_fields': {'error': str(e)}})
             return []
     
     async def _apply_batch_filter(self, batch: str) -> None:
@@ -139,7 +140,7 @@ class YCScraper:
             logger.warning("Could not find batch filter UI", batch=batch)
             
         except Exception as e:
-            logger.warning("Failed to apply batch filter", batch=batch, error=str(e))
+            logger.warning("Failed to apply batch filter", extra={'extra_fields': {'batch': batch, 'error': str(e)}})
     
     async def _scroll_to_load_companies(self, target_count: int) -> None:
         """Scroll to load more companies via infinite scroll."""
@@ -167,7 +168,7 @@ class YCScraper:
                            scroll_attempts=scroll_attempts)
             
         except Exception as e:
-            logger.warning("Failed to scroll for more companies", error=str(e))
+            logger.warning("Failed to scroll for more companies", extra={'extra_fields': {'error': str(e)}})
     
     async def _extract_profile_urls(self, limit: int) -> List[str]:
         """Extract company profile URLs from the page."""
@@ -186,10 +187,14 @@ class YCScraper:
                     continue
             
             logger.info("Extracted profile URLs", count=len(profile_urls))
+            
+            # Shuffle to get random companies
+            random.shuffle(profile_urls)
+            
             return profile_urls
             
         except Exception as e:
-            logger.error("Failed to extract profile URLs", error=str(e))
+            logger.error("Failed to extract profile URLs", extra={'extra_fields': {'error': str(e)}})
             return []
     
     async def close(self) -> None:
@@ -203,4 +208,4 @@ class YCScraper:
             logger.info("Closed Playwright connection for YC scraping")
             
         except Exception as e:
-            logger.error("Failed to close Playwright connection for YC scraping", error=str(e))
+            logger.error("Failed to close Playwright connection for YC scraping", extra={'extra_fields': {'error': str(e)}})

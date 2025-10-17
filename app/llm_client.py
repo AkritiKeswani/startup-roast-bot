@@ -11,7 +11,7 @@ from logutil import setup_logger
 logger = setup_logger(__name__)
 
 GROK_API_KEY = os.environ["GROK_API_KEY"]
-GROK_MODEL = os.environ.get("GROK_MODEL", "grok-2")
+GROK_MODEL = os.environ.get("GROK_MODEL", "grok-3")
 GROK_BASE = os.environ.get("GROK_BASE_URL", "https://api.x.ai/v1")
 
 SYSTEM_PROMPT = """You are "LandingPageRoaster"—a witty but constructive copy editor.
