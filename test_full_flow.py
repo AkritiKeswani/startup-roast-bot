@@ -120,7 +120,7 @@ async def test_full_flow():
         
         await browser.close()
         await playwright.stop()
-        print("🎉 Full flow test completed successfully!")
+        print("Full flow test completed successfully!")
         
     except Exception as e:
         print(f"❌ Error: {e}")

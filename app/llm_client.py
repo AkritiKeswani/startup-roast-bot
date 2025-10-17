@@ -86,4 +86,4 @@ def generate_roast(summary: Dict[str, str], style: str = "spicy") -> str:
     except Exception as e:
         logger.error("Failed to generate roast", extra={'error': str(e), 'style': style})
         # Fallback roast
-        return f"Your landing page needs work, but at least it loads! 🚀"
+        return f"Your landing page needs work, but at least it loads!"

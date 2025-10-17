@@ -67,8 +67,8 @@ runs: Dict[str, RunStatus] = {}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan management - showcasing Cerebrium's orchestration."""
-    logger.info("🚀 Startup Roast Bot starting on Cerebrium...")
-    logger.info("🔥 Leveraging Cerebrium's platform capabilities:")
+    logger.info("Startup Roast Bot starting on Cerebrium...")
+    logger.info("Leveraging Cerebrium's platform capabilities:")
     logger.info("   - Custom runtime with WebSocket support")
     logger.info("   - Built-in storage (no AWS S3 needed)")
     logger.info("   - Serverless scaling for concurrent runs")
@@ -226,11 +226,11 @@ async def execute_roast(run_id: str, request: RunRequest):
                     website_url = await playwright_bridge.extract_website_url(profile_url)
                     if website_url:
                         company_urls.append(website_url)
-                        logger.info(f"✅ Extracted website: {website_url}", extra={'extra_fields': {'website_url': website_url}})
+                        logger.info(f"Extracted website: {website_url}", extra={'extra_fields': {'website_url': website_url}})
                     else:
-                        logger.warning(f"⚠️ No website URL found for: {profile_url}", extra={'extra_fields': {'profile_url': profile_url}})
+                        logger.warning(f"No website URL found for: {profile_url}", extra={'extra_fields': {'profile_url': profile_url}})
                 else:
-                    logger.error(f"❌ Failed to load YC profile: {profile_url}", extra={'extra_fields': {'profile_url': profile_url}})
+                    logger.error(f"Failed to load YC profile: {profile_url}", extra={'extra_fields': {'profile_url': profile_url}})
             
             await yc_scraper.close()
             
