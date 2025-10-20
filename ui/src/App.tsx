@@ -1,263 +1,367 @@
-import { useRef, useState } from "react";
+import React, { useState, useEffect } from 'react'
 
-const API = import.meta.env.VITE_API_BASE as string || "http://localhost:5000";
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000'
 
-interface CompanyResult {
-  company: {
-    name: string;
-    website: string;
-  };
-  roast?: string;
-  screenshot_url?: string;
-  status: string;
-  error_reason?: string;
+interface Company {
+  name: string
+  website: string
 }
 
-export default function App() {
-  const [mode, setMode] = useState<"yc" | "custom">("yc");
-  const [urls, setUrls] = useState("");
-  const [style, setStyle] = useState("spicy");
-  const [rows, setRows] = useState<CompanyResult[]>([]);
-  const [isRunning, setIsRunning] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
+interface Result {
+  company: Company
+  roast: string
+  screenshot_url?: string
+  status: string
+  reason?: string
+}
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-  };
+interface RunRequest {
+  source: 'yc' | 'custom'
+  yc: {
+    batch?: string
+    limit: number
+  }
+  custom: {
+    urls: string[]
+  }
+  style: 'spicy' | 'kind' | 'deadpan'
+  max_steps: number
+}
 
-  async function start() {
-    if (isRunning) return;
-    
-    setIsRunning(true);
-    setRows([]);
-    
-    const body = mode === "yc"
-      ? { 
-          source: "yc", 
-          style, 
-          max_steps: 6 
-        }
-      : { 
-          source: "custom", 
-          custom: { urls: urls.split("\n").filter(Boolean) }, 
-          style, 
-          max_steps: 6 
-        };
+function App() {
+  const [results, setResults] = useState<Result[]>([])
+  const [logs, setLogs] = useState<string[]>([])
+  const [isRunning, setIsRunning] = useState(false)
+  const [runId, setRunId] = useState<string | null>(null)
+  const [ws, setWs] = useState<WebSocket | null>(null)
+  
+  const [formData, setFormData] = useState<RunRequest>({
+    source: 'yc',
+    yc: { batch: '', limit: 24 },
+    custom: { urls: [''] },
+    style: 'spicy',
+    max_steps: 6
+  })
 
+  const addLog = (message: string) => {
+    setLogs(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`])
+  }
+
+  const startRun = async () => {
     try {
-      const r = await fetch(`${API}/run`, {
-        method: "POST", 
-        headers: { "Content-Type": "application/json" }, 
-        body: JSON.stringify(body)
-      });
+      setIsRunning(true)
+      setResults([])
+      setLogs([])
+      addLog('Starting roast session...')
+
+      const response = await fetch(`${API_BASE}/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      setRunId(data.run_id)
+      addLog(`Run started: ${data.run_id}`)
+
+      // Connect to WebSocket
+      const wsUrl = API_BASE.replace(/^http/, 'ws') + data.stream_url
+      const newWs = new WebSocket(wsUrl)
       
-      if (!r.ok) {
-        throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+      newWs.onopen = () => {
+        addLog('Connected to stream')
       }
       
-      const j = await r.json();
-      
-      const wsUrl = `${API.replace(/^http/, "ws")}${j.stream_url}`;
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-      
-      ws.onopen = () => {};
-      ws.onmessage = ev => {
-        const msg = JSON.parse(ev.data);
-        if (msg.company) {
-          setRows(x => [msg, ...x]);
+      newWs.onmessage = (event) => {
+        const data = JSON.parse(event.data)
+        
+        if (data.status === 'finished') {
+          addLog('Run completed!')
+          setIsRunning(false)
+          newWs.close()
+          setWs(null)
+        } else if (data.status === 'error') {
+          addLog(`Error: ${data.error}`)
+          setIsRunning(false)
+          newWs.close()
+          setWs(null)
+        } else if (data.company) {
+          setResults(prev => [...prev, data])
+          addLog(`Processed: ${data.company.name}`)
         }
-        if (msg.status === "finished") {
-          setIsRunning(false);
-        }
-        if (msg.status === "failed") {
-          setIsRunning(false);
-        }
-      };
-      ws.onerror = (error) => {
-        setIsRunning(false);
-      };
-      ws.onclose = () => {
-        setIsRunning(false);
-      };
+      }
       
+      newWs.onerror = (error) => {
+        addLog(`WebSocket error: ${error}`)
+        setIsRunning(false)
+      }
+      
+      setWs(newWs)
     } catch (error) {
-      setIsRunning(false);
+      addLog(`Error: ${error}`)
+      setIsRunning(false)
     }
   }
 
-  const stop = () => {
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
+  const stopRun = () => {
+    if (ws) {
+      ws.close()
+      setWs(null)
     }
-    setIsRunning(false);
-  };
+    setIsRunning(false)
+    addLog('Run stopped')
+  }
+
+  const updateFormData = (field: string, value: any) => {
+    setFormData(prev => {
+      const newData = { ...prev }
+      const keys = field.split('.')
+      let current = newData
+      
+      for (let i = 0; i < keys.length - 1; i++) {
+        current = current[keys[i]]
+      }
+      
+      current[keys[keys.length - 1]] = value
+      return newData
+    })
+  }
+
+  const addCustomUrl = () => {
+    setFormData(prev => ({
+      ...prev,
+      custom: {
+        ...prev.custom,
+        urls: [...prev.custom.urls, '']
+      }
+    }))
+  }
+
+  const updateCustomUrl = (index: number, value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      custom: {
+        ...prev.custom,
+        urls: prev.custom.urls.map((url, i) => i === index ? value : url)
+      }
+    }))
+  }
+
+  const removeCustomUrl = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      custom: {
+        ...prev.custom,
+        urls: prev.custom.urls.filter((_, i) => i !== index)
+      }
+    }))
+  }
 
   return (
-    <div className="mx-auto max-w-6xl p-6 space-y-6">
-      <div className="text-center">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">🔥 Startup Roast Bot</h1>
-        <p className="text-gray-600">Get a random YC company roasted, or enter custom URLs to critique</p>
-      </div>
-
-      <div className="space-y-4">
-        <div className="bg-white rounded-xl border p-6 shadow-sm">
-          <h2 className="text-xl font-semibold mb-4">Configuration</h2>
-          
-          <div className="space-y-4">
-            <div className="flex items-center gap-4">
-              <label className="flex items-center gap-2">
-                <input 
-                  type="radio" 
-                  checked={mode === "yc"} 
-                  onChange={() => setMode("yc")}
-                  className="text-blue-600"
-                />
-                <span className="font-medium">YC Directory</span>
-              </label>
-              <label className="flex items-center gap-2">
-                <input 
-                  type="radio" 
-                  checked={mode === "custom"} 
-                  onChange={() => setMode("custom")}
-                  className="text-blue-600"
-                />
-                <span className="font-medium">Custom URLs</span>
-              </label>
-            </div>
-
-            {mode === "yc" ? (
-              <div className="p-4 bg-blue-50 rounded-lg">
-                <p className="text-blue-800 text-sm">
-                  🎲 <strong>Random YC Company:</strong> We'll pick a random company from the YC directory and roast their landing page!
-                </p>
-              </div>
-            ) : (
+    <div className="min-h-screen bg-gray-50">
+      <div className="container mx-auto px-4 py-8">
+        <h1 className="text-4xl font-bold text-center mb-8 text-gray-800">
+          🍖 Startup Roast Bot
+        </h1>
+        
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Controls Panel */}
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <h2 className="text-2xl font-semibold mb-4">Configuration</h2>
+            
+            <div className="space-y-4">
+              {/* Source Selection */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  URLs (one per line)
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Source
                 </label>
-                <textarea 
-                  className="input h-32" 
-                  placeholder="https://site1.com&#10;https://site2.com&#10;https://site3.com"
-                  value={urls} 
-                  onChange={e => setUrls(e.target.value)} 
-                />
+                <div className="flex space-x-4">
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      value="yc"
+                      checked={formData.source === 'yc'}
+                      onChange={(e) => updateFormData('source', e.target.value)}
+                      className="mr-2"
+                    />
+                    YC Companies
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      value="custom"
+                      checked={formData.source === 'custom'}
+                      onChange={(e) => updateFormData('source', e.target.value)}
+                      className="mr-2"
+                    />
+                    Custom URLs
+                  </label>
+                </div>
               </div>
-            )}
 
-            <div className="grid gap-3 md:grid-cols-2">
+              {/* YC Configuration */}
+              {formData.source === 'yc' && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Batch (optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.yc.batch || ''}
+                      onChange={(e) => updateFormData('yc.batch', e.target.value)}
+                      placeholder="e.g., F25, S25"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Limit
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.yc.limit}
+                      onChange={(e) => updateFormData('yc.limit', parseInt(e.target.value))}
+                      min="1"
+                      max="100"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Custom URLs */}
+              {formData.source === 'custom' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    URLs
+                  </label>
+                  <div className="space-y-2">
+                    {formData.custom.urls.map((url, index) => (
+                      <div key={index} className="flex space-x-2">
+                        <input
+                          type="url"
+                          value={url}
+                          onChange={(e) => updateCustomUrl(index, e.target.value)}
+                          placeholder="https://example.com"
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <button
+                          onClick={() => removeCustomUrl(index)}
+                          className="px-3 py-2 bg-red-500 text-white rounded-md hover:bg-red-600"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      onClick={addCustomUrl}
+                      className="w-full px-3 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
+                    >
+                      Add URL
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Style Selection */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Roast Style
                 </label>
-                <select 
-                  className="input" 
-                  value={style} 
-                  onChange={e => setStyle(e.target.value)}
+                <select
+                  value={formData.style}
+                  onChange={(e) => updateFormData('style', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="spicy">🌶️ Spicy</option>
                   <option value="kind">😊 Kind</option>
                   <option value="deadpan">😐 Deadpan</option>
                 </select>
               </div>
-              <div className="flex items-end">
-                {isRunning ? (
-                  <button 
-                    onClick={stop}
-                    className="w-full px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors"
+
+              {/* Action Buttons */}
+              <div className="flex space-x-4">
+                <button
+                  onClick={startRun}
+                  disabled={isRunning}
+                  className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                  {isRunning ? 'Running...' : '🍖 Roast Landing Pages'}
+                </button>
+                {isRunning && (
+                  <button
+                    onClick={stopRun}
+                    className="px-6 py-3 bg-red-600 text-white rounded-md hover:bg-red-700"
                   >
-                    Stop Run
-                  </button>
-                ) : (
-                  <button 
-                    onClick={start}
-                    className="w-full px-4 py-2 rounded-lg bg-black text-white hover:bg-gray-800 transition-colors"
-                  >
-                    🔥 Start Roasting
+                    Stop
                   </button>
                 )}
               </div>
             </div>
+          </div>
+
+          {/* Results Panel */}
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <h2 className="text-2xl font-semibold mb-4">Results</h2>
+            
+            {results.length === 0 ? (
+              <p className="text-gray-500 text-center py-8">
+                No results yet. Start a roast session to see companies here.
+              </p>
+            ) : (
+              <div className="space-y-4 max-h-96 overflow-y-auto">
+                {results.map((result, index) => (
+                  <div key={index} className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex justify-between items-start mb-2">
+                      <h3 className="font-semibold text-lg">{result.company.name}</h3>
+                      <span className={`px-2 py-1 rounded text-xs ${
+                        result.status === 'done' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                      }`}>
+                        {result.status}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-600 mb-2">{result.company.website}</p>
+                    {result.roast && (
+                      <p className="text-gray-800 italic">"{result.roast}"</p>
+                    )}
+                    {result.reason && (
+                      <p className="text-sm text-red-600">Error: {result.reason}</p>
+                    )}
+                    {result.screenshot_url && (
+                      <img 
+                        src={result.screenshot_url} 
+                        alt={`${result.company.name} screenshot`}
+                        className="mt-2 max-w-full h-32 object-cover rounded"
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="md:col-span-2">
-            <div className="bg-white rounded-xl border shadow-sm">
-              <div className="p-4 border-b">
-                <h2 className="text-xl font-semibold">Results</h2>
-              </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="p-3 text-left font-medium text-gray-700">Company / Website</th>
-                  <th className="p-3 text-left font-medium text-gray-700">Roast</th>
-                  <th className="p-3 text-left font-medium text-gray-700">Screenshot</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.length === 0 ? (
-                  <tr>
-                    <td colSpan={3} className="p-8 text-center text-gray-500">
-                      No results yet. Start a roast run to see companies here.
-                    </td>
-                  </tr>
-                ) : (
-                  rows.map((r, i) => (
-                    <tr key={i} className="border-t hover:bg-gray-50">
-                      <td className="p-3">
-                        <div className="font-medium text-gray-900">{r.company?.name || "—"}</div>
-                        <a 
-                          className="text-blue-600 hover:underline text-sm" 
-                          href={r.company?.website} 
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          {r.company?.website}
-                        </a>
-                      </td>
-                      <td className="p-3">
-                        {r.roast ? (
-                          <div className="space-y-2">
-                            <div className="text-gray-800">{r.roast}</div>
-                            <button
-                              onClick={() => copyToClipboard(r.roast!)}
-                              className="text-xs text-blue-600 hover:underline"
-                            >
-                              Copy
-                            </button>
-                          </div>
-                        ) : r.error_reason ? (
-                          <div className="text-red-600 text-sm">{r.error_reason}</div>
-                        ) : (
-                          <div className="text-gray-400">—</div>
-                        )}
-                      </td>
-                      <td className="p-3">
-                        {r.screenshot_url ? (
-                          <img 
-                            src={r.screenshot_url} 
-                            className="h-20 w-32 object-cover rounded border" 
-                            alt="Screenshot"
-                          />
-                        ) : (
-                          <div className="text-gray-400">—</div>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
-                </tbody>
-              </table>
-            </div>
-            </div>
+        {/* Logs Panel */}
+        <div className="mt-8 bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-2xl font-semibold mb-4">Logs</h2>
+          <div className="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm max-h-48 overflow-y-auto">
+            {logs.length === 0 ? (
+              <p className="text-gray-500">No logs yet...</p>
+            ) : (
+              logs.map((log, index) => (
+                <div key={index}>{log}</div>
+              ))
+            )}
           </div>
-
         </div>
       </div>
     </div>
-  );
+  )
 }
+
+export default App

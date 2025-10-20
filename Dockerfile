@@ -1,42 +1,15 @@
 FROM python:3.11-slim
 
-# Install system dependencies for Playwright
 RUN apt-get update && apt-get install -y \
-    wget \
-    gnupg \
-    ca-certificates \
-    libnss3 \
-    libatk-bridge2.0-0 \
-    libdrm2 \
-    libxkbcommon0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxrandr2 \
-    libgbm1 \
-    libxss1 \
-    libasound2 \
-    && rm -rf /var/lib/apt/lists/*
+  libnss3 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
+  libxrandr2 libgbm1 libasound2 libatk1.0-0 libatk-bridge2.0-0 \
+  libdrm2 libgtk-3-0 libpango-1.0-0 libxshmfence1 wget ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
 WORKDIR /app
+COPY app/requirements.txt app/requirements.txt
+RUN pip install --no-cache-dir -r app/requirements.txt && python -m playwright install --with-deps chromium
 
-# Copy requirements first for better caching
-COPY app/requirements.txt .
-
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Install Playwright and browsers
-RUN python -m playwright install --with-deps chromium
-
-# Copy application code
-COPY app/ .
-
-# Set environment variables
-ENV PYTHONPATH=/app
-
-# Expose port
-EXPOSE 5000
-
-# Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "5000"]
+COPY app /app/app
+ENV PYTHONUNBUFFERED=1
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "5000"]

@@ -1,19 +1,5 @@
-[project]
-name = "startup-roast-bot"
-cerebrium_url = "https://api.cerebrium.ai/v2"
-
-[deployment]
-name = "startup-roast-bot"
-python_version = "3.11"
-cuda = false
-gpu = false
-replicas = 1
-min_replicas = 1
-max_replicas = 10
-response_grace_period = 180
-timeout = 300
-memory = "4Gi"
-cpu = "2"
+[build]
+runtime = "python3.11"
 
 [cerebrium.runtime.custom]
 port = 5000
@@ -31,6 +17,4 @@ BROWSERBASE_API_KEY = "env:BROWSERBASE_API_KEY"
 BROWSERBASE_PROJECT_ID = "env:BROWSERBASE_PROJECT_ID"
 GROK_API_KEY = "env:GROK_API_KEY"
 GROK_MODEL = "env:GROK_MODEL"
-
-[build]
-requirements = ["app/requirements.txt"]
+GROK_BASE_URL = "env:GROK_BASE_URL"

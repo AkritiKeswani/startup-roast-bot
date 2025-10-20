@@ -1,209 +1,142 @@
-# Startup Roast Bot
+# 🍖 Startup Roast Bot
 
-An AI-powered agent that analyzes startup landing pages and generates witty critiques using Browserbase + Playwright + Grok, deployed on Cerebrium.
+A full-stack application that scrapes startup landing pages and generates witty roasts using AI. Built with FastAPI backend and React frontend.
 
-## Quick Demo
+## Features
 
-1. **YC Mode**: Scrapes YC directory (optionally filter by batch like "F25") → visits each company's website → generates witty roasts
-2. **Custom Mode**: Enter any URLs → get instant landing page critiques
-3. **Real-time**: WebSocket streaming shows results as they're processed
-4. **Screenshots**: Each roast includes a screenshot of the landing page
+- **YC Company Scraping**: Automatically discovers companies from Y Combinator's directory
+- **Custom URL Support**: Roast any website by providing custom URLs
+- **Browser Automation**: Uses Browserbase + Playwright for reliable web scraping
+- **AI Roasting**: Generates witty, constructive roasts using Grok AI
+- **Real-time Updates**: WebSocket streaming for live progress updates
+- **Screenshot Capture**: Takes screenshots of each landing page
+- **Real-time Processing**: Live scraping and AI generation
 
-## Architecture
-
-```
-Frontend (Vite + React + Tailwind) 
-    ↓ HTTP/WebSocket
-Cerebrium FastAPI Backend
-    ↓ CDP
-Browserbase + Playwright
-    ↓ HTTP
-Grok API (X.AI)
-    ↓ Data URLs
-Screenshots embedded directly in responses
-```
-
-## Local Development
+## Quick Start
 
 ### Prerequisites
 
 - Python 3.11+
 - Node.js 18+
-- Browserbase account
-- Grok API access (X.AI)
 
-### Backend Setup
-
-1. **Clone and setup**:
-   ```bash
-   git clone <repo>
-   cd startup-roast-bot
-   python -m venv venv
-   source venv/bin/activate  # or `venv\Scripts\activate` on Windows
-   ```
-
-2. **Install dependencies**:
-   ```bash
-   pip install -r app/requirements.txt
-   python -m playwright install --with-deps chromium
-   ```
-
-3. **Environment variables**:
-   ```bash
-   cp env.example .env
-   # Edit .env with your API keys
-   ```
-
-4. **Run locally**:
-   ```bash
-   cd app
-   uvicorn main:app --host 0.0.0.0 --port 5000 --reload
-   ```
-
-### Frontend Setup
-
-1. **Install and run**:
-   ```bash
-   cd ui
-   npm install
-   npm run dev
-   ```
-
-2. **Environment**:
-   ```bash
-   cp env.local.example .env.local
-   # Set VITE_API_BASE=http://localhost:5000
-   ```
-
-## Cerebrium Deployment
-
-### 1. Install Cerebrium CLI
+### One-Command Setup
 
 ```bash
-pip install cerebrium
+# 1. Clone and setup
+git clone <your-repo>
+cd startup-roast-bot
+
+# 2. Configure API keys
+cp .env.example .env
+# Edit .env with your actual API keys
+
+# 3. Install dependencies
+pip install -r app/requirements.txt
+cd ui && npm install && cd ..
+
+# 4. Start everything
+./start.sh
 ```
 
-### 2. Configure Environment
+That's it! The app will be running at http://localhost:5173
 
-Set these environment variables in Cerebrium dashboard:
-- `BROWSERBASE_API_KEY`
-- `BROWSERBASE_PROJECT_ID` 
-- `GROK_API_KEY`
+### Debug Mode
 
-### 3. Deploy
+If something goes wrong:
 
 ```bash
-cerebrium deploy
+./debug.sh  # Check what's missing
 ```
 
-### 4. Update Frontend
+### Manual Mode (if needed)
 
-Set `VITE_API_BASE` to your Cerebrium URL:
 ```bash
-# In ui/.env.local
-VITE_API_BASE=https://your-deployment.cerebrium.app
+# Backend only
+source venv/bin/activate
+uvicorn app.main:app --reload --port 5000
+
+# Frontend only (in another terminal)
+cd ui && npm run dev
 ```
-
-## API Endpoints
-
-### POST /run
-Start a new roast run.
-
-**Request**:
-```json
-{
-  "source": "yc" | "custom",
-  "yc": { "batch": "F25", "limit": 24 },
-  "custom": { "urls": ["https://example.com"] },
-  "style": "spicy" | "kind" | "deadpan",
-  "max_steps": 6
-}
-```
-
-**Response**:
-```json
-{
-  "run_id": "uuid",
-  "status": "running", 
-  "stream_url": "/stream/{run_id}"
-}
-```
-
-### GET /runs/{run_id}
-Get final results for a completed run.
-
-### WebSocket /stream/{run_id}
-Real-time updates as companies are processed:
-
-```json
-{
-  "company": {"name": "Acme", "website": "https://acme.com"},
-  "roast": "Your hero says 'AI' but your CTA says 'Get Started'...",
-  "screenshot_url": "https://s3.../screenshot.png",
-  "status": "done"
-}
-```
-
-## Features
-
-- **YC Integration**: Scrapes YC directory with batch filtering
-- **Smart Extraction**: DOM-first extraction of title, hero, CTA
-- **AI Roasts**: Grok-powered witty critiques (3 tone styles)
-- **Real-time UI**: WebSocket streaming with live updates
-- **Screenshots**: Viewport screenshots for each landing page
-- **Error Handling**: Graceful failures with detailed logging
-- **Scalable**: Cerebrium's serverless architecture
 
 ## Configuration
 
-### Roast Styles
+### Environment Variables
 
-- **Spicy**: Playful jabs with edge
-- **Kind**: Gentle, encouraging feedback  
-- **Deadpan**: Dry, minimal, ironic
+Create a `.env` file in the root directory:
 
-### YC Batch Filtering
+```env
+# Backend - Required for real API usage
+BROWSERBASE_API_KEY=your_browserbase_api_key_here
+BROWSERBASE_PROJECT_ID=your_browserbase_project_id_here
+GROK_API_KEY=your_grok_api_key_here
+GROK_MODEL=grok-2
+GROK_BASE_URL=https://api.x.ai/v1
+```
 
-Supports YC batch codes like:
-- `F25` (Fall 2025)
-- `S24` (Summer 2024)
-- `W24` (Winter 2024)
+### Frontend Environment
 
-## Troubleshooting
+Create a `.env` file in the `ui/` directory:
 
-### Common Issues
+```env
+VITE_API_BASE=http://localhost:5000
+```
 
-1. **Browserbase connection fails**:
-   - Check `BROWSERBASE_API_KEY` and `BROWSERBASE_PROJECT_ID`
-   - Verify project has active sessions
+## Usage
 
-2. **Grok API errors**:
-   - Verify `GROK_API_KEY` is valid
-   - Check rate limits and quotas
+1. **Start the backend**: `uvicorn app.main:app --reload --port 5000`
+2. **Start the frontend**: `cd ui && npm run dev`
+3. **Open browser**: Navigate to `http://localhost:5173`
+4. **Configure your roast**:
+   - Choose source: YC Companies or Custom URLs
+   - Set batch filter (for YC) or add custom URLs
+   - Select roast style: Spicy, Kind, or Deadpan
+5. **Click "Roast Landing Pages"** and watch the magic happen!
 
-3. **WebSocket disconnects**:
-   - Check Cerebrium deployment logs
-   - Verify CORS settings
+## API Endpoints
 
-### Logs
+- `POST /run` - Start a new roast session
+- `GET /runs/{id}` - Get results for a specific run
+- `WS /stream/{id}` - WebSocket stream for real-time updates
+- `GET /health` - Health check
+- `GET /ready` - Readiness check
 
-Backend logs are available in Cerebrium dashboard. Frontend logs appear in browser console and the logs panel.
+## Deployment
 
-## Contributing
+### Cerebrium
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test locally and on Cerebrium
-5. Submit a pull request
+1. Set up your Cerebrium account
+2. Configure secrets in the Cerebrium dashboard
+3. Deploy: `cerebrium deploy`
+
+### Docker
+
+```bash
+docker build -t startup-roast-bot .
+docker run -p 5000:5000 startup-roast-bot
+```
+
+## Development
+
+### Required API Keys
+
+This application requires real API keys to function:
+1. **Browserbase**: Get an API key and project ID from [browserbase.com](https://browserbase.com)
+2. **Grok**: Get an API key from [x.ai](https://x.ai)
+
+### Screenshots
+
+Screenshots are automatically converted to base64 data URLs and embedded directly in the response, making them immediately viewable in the frontend without requiring external storage.
+
+## Architecture
+
+- **Backend**: FastAPI with WebSocket support
+- **Frontend**: React + Vite + Tailwind CSS
+- **Browser Automation**: Playwright via Browserbase
+- **AI**: Grok API for roast generation
+- **Storage**: Base64 data URLs for immediate screenshot display
+- **Deployment**: Cerebrium for serverless backend
 
 ## License
 
-MIT License - see LICENSE file for details.
-
-## Acknowledgments
-
-- [Cerebrium](https://cerebrium.ai) for serverless ML hosting
-- [Browserbase](https://browserbase.com) for browser automation
-- [X.AI](https://x.ai) for Grok API
-- [Playwright](https://playwright.dev) for web automation
+MIT

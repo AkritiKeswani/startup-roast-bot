@@ -1,357 +1,165 @@
-"""
-Startup Roast Bot - FastAPI Backend
-A production-grade agent that roasts startup websites using Browserbase + Playwright + Grok.
-"""
-
-import os
+import os, signal, uuid, threading, time
+from typing import Dict, List
+from fastapi import FastAPI, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
+from .models import RunRequest, CompanyResult
+from .logutil import jlog
 from dotenv import load_dotenv
 
-# Load environment variables
+# Load environment variables from .env file
 load_dotenv()
 
-import asyncio
-import json
-import uuid
-from datetime import datetime
-from typing import Dict, List, Optional
-from contextlib import asynccontextmanager
+RUNS: Dict[str, List[CompanyResult]] = {}
+CLIENTS: Dict[str, List[WebSocket]] = {}
 
-import uvicorn
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
-
-from models import (
-    RunRequest, RunResponse, RunStatus, CompanyResult, 
-    WebSocketMessage, HealthResponse
-)
-from browserbase_client import browserbase_client
-from playwright_bridge import PlaywrightBridge
-from yc_scraper import YCScraper
-from llm_client import generate_roast
-from storage import storage
-from logutil import setup_logger
-
-logger = setup_logger(__name__)
-
-
-class ConnectionManager:
-    """Manages WebSocket connections for real-time updates."""
-    
-    def __init__(self):
-        self.active_connections: Dict[str, WebSocket] = {}
-    
-    async def connect(self, websocket: WebSocket, run_id: str):
-        await websocket.accept()
-        self.active_connections[run_id] = websocket
-        logger.info("WebSocket connected", extra={'extra_fields': {'run_id': run_id}})
-    
-    def disconnect(self, run_id: str):
-        if run_id in self.active_connections:
-            del self.active_connections[run_id]
-            logger.info("WebSocket disconnected", extra={'extra_fields': {'run_id': run_id}})
-    
-    async def send_message(self, run_id: str, message: dict):
-        if run_id in self.active_connections:
-            try:
-                await self.active_connections[run_id].send_text(json.dumps(message))
-            except Exception as e:
-                logger.warning("Failed to send WebSocket message", extra={'extra_fields': {'run_id': run_id, 'error': str(e)}})
-                self.disconnect(run_id)
-
-
-# Global instances
-connection_manager = ConnectionManager()
-runs: Dict[str, RunStatus] = {}
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Application lifespan management - showcasing Cerebrium's orchestration."""
-    logger.info("Startup Roast Bot starting on Cerebrium...")
-    logger.info("Leveraging Cerebrium's platform capabilities:")
-    logger.info("   - Custom runtime with WebSocket support")
-    logger.info("   - Built-in storage (no AWS S3 needed)")
-    logger.info("   - Serverless scaling for concurrent runs")
-    logger.info("   - Long-running task support (30-90s workflows)")
-    yield
-    logger.info("👋 Graceful shutdown complete - Cerebrium handles cleanup!")
-
-
-app = FastAPI(
-    title="Startup Roast Bot",
-    description="AI-powered startup website analyzer and roaster",
-    version="1.0.0",
-    lifespan=lifespan
-)
-
-# Add CORS middleware
+app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["*"], allow_credentials=True,
+    allow_methods=["*"], allow_headers=["*"]
 )
 
+shutdown = False
+def _sigterm(*_): 
+    global shutdown; shutdown = True
+signal.signal(signal.SIGTERM, _sigterm)
 
-@app.get("/health", response_model=HealthResponse)
-async def health():
-    """Health check endpoint for Cerebrium load balancer."""
-    return HealthResponse(
-        status="healthy",
-        timestamp=datetime.utcnow()
-    )
+@app.get("/health")
+def health(): return {"ok": True}
+@app.get("/ready")
+def ready(): return {"ready": True}
 
+@app.post("/run")
+def start(req: RunRequest):
+    run_id = f"rk_{uuid.uuid4().hex[:8]}"
+    RUNS[run_id] = []
+    threading.Thread(target=_runner, args=(run_id, req), daemon=True).start()
+    return {"run_id": run_id, "status":"running", "stream_url": f"/stream/{run_id}"}
 
-@app.get("/ready", response_model=HealthResponse)
-async def ready():
-    """Ready check endpoint for Cerebrium load balancer."""
-    return HealthResponse(
-        status="ready",
-        timestamp=datetime.utcnow()
-    )
-
-
-@app.post("/run", response_model=RunResponse)
-async def run_roast(request: RunRequest):
-    """Start a new roast run."""
-    try:
-        # Validate request
-        if request.source == "custom" and not request.custom:
-            raise HTTPException(status_code=400, detail="Custom parameters required for custom source")
-        if request.source == "custom" and not request.custom.get("urls"):
-            raise HTTPException(status_code=400, detail="URLs list cannot be empty for custom source")
-        
-        run_id = str(uuid.uuid4())
-        
-        # Create run status
-        run_status = RunStatus(
-            run_id=run_id,
-            status="running",
-            created_at=datetime.utcnow()
-        )
-        runs[run_id] = run_status
-        
-        # Start roast process in background
-        asyncio.create_task(execute_roast(run_id, request))
-        
-        logger.info("Started roast run", extra={'extra_fields': {'run_id': run_id, 'source': request.source}})
-        
-        return RunResponse(
-            run_id=run_id,
-            status="running",
-            stream_url=f"/stream/{run_id}"
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("Failed to start roast run", extra={'error': str(e)})
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-
-@app.get("/runs/{run_id}", response_model=RunStatus)
-async def get_run(run_id: str):
-    """Get the status and results of a specific run."""
-    try:
-        if run_id not in runs:
-            raise HTTPException(status_code=404, detail="Run not found")
-        
-        return runs[run_id]
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("Failed to get run", extra={'extra_fields': {'run_id': run_id, 'error': str(e)}})
-        raise HTTPException(status_code=500, detail="Internal server error")
-
+@app.get("/runs/{run_id}")
+def get_run(run_id:str):
+    return [r.model_dump() for r in RUNS.get(run_id, [])]
 
 @app.websocket("/stream/{run_id}")
-async def stream_run_updates(websocket: WebSocket, run_id: str):
-    """WebSocket endpoint for real-time run updates."""
-    await connection_manager.connect(websocket, run_id)
-    
+async def ws_stream(ws: WebSocket, run_id: str):
+    await ws.accept()
+    CLIENTS.setdefault(run_id, []).append(ws)
     try:
         while True:
-            await asyncio.sleep(1)
-            
-            if run_id in runs:
-                run = runs[run_id]
-                
-                # Send current status
-                await connection_manager.send_message(run_id, {
-                    "status": run.status,
-                    "total_companies": run.total_companies,
-                    "processed_companies": run.processed_companies
-                })
-                
-                # Close connection if run is complete
-                if run.status in ["completed", "failed"]:
-                    break
-                    
-    except WebSocketDisconnect:
-        connection_manager.disconnect(run_id)
-
-
-async def execute_roast(run_id: str, request: RunRequest):
-    """Execute the roast process."""
-    run = runs[run_id]
-    
-    try:
-        # Create Browserbase session
-        logger.info("Creating Browserbase session", extra={'extra_fields': {'run_id': run_id}})
-        session_data = browserbase_client.create_session()
-        session_id = session_data["id"]
-        playwright_endpoint = session_data["connectUrl"]
-        
-        # Initialize Playwright bridge
-        playwright_bridge = PlaywrightBridge(playwright_endpoint)
-        await playwright_bridge.connect()
-        
-        # Get company URLs based on source
-        company_urls = []
-        if request.source == "yc":
-            # YC Mode: Pick ONE random company from YC directory
-            yc_scraper = YCScraper(playwright_endpoint)
-            await yc_scraper.connect()
-            
-            logger.info("Picking a random YC company", extra={'extra_fields': {}})
-            profile_urls = await yc_scraper.scrape_company_urls(limit=1)  # Just get 1 random company
-            logger.info(f"Found {len(profile_urls)} YC profile URLs", extra={'extra_fields': {'count': len(profile_urls)}})
-            
-            if profile_urls:
-                profile_url = profile_urls[0]
-                logger.info(f"Processing YC profile: {profile_url}", extra={'extra_fields': {'profile_url': profile_url}})
-                
-                if await playwright_bridge.goto(profile_url):
-                    website_url = await playwright_bridge.extract_website_url(profile_url)
-                    if website_url:
-                        company_urls.append(website_url)
-                        logger.info(f"Extracted website: {website_url}", extra={'extra_fields': {'website_url': website_url}})
-                    else:
-                        logger.warning(f"No website URL found for: {profile_url}", extra={'extra_fields': {'profile_url': profile_url}})
-                else:
-                    logger.error(f"Failed to load YC profile: {profile_url}", extra={'extra_fields': {'profile_url': profile_url}})
-            
-            await yc_scraper.close()
-            
-        elif request.source == "custom":
-            # Custom Mode: Use provided URLs directly
-            custom_params = request.custom or {}
-            company_urls = custom_params.get("urls", [])
-            logger.info(f"Using {len(company_urls)} custom URLs", extra={'extra_fields': {'count': len(company_urls)}})
-        
-        run.total_companies = len(company_urls)
-        logger.info("Found companies to process", extra={'extra_fields': {'run_id': run_id, 'count': len(company_urls)}})
-        
-        # Process each company
-        for i, website_url in enumerate(company_urls):
-            try:
-                company_slug = website_url.replace("https://", "").replace("http://", "").split("/")[0]
-                
-                # Navigate to website
-                if not await playwright_bridge.goto(website_url):
-                    await send_company_result(run_id, {
-                        "company": {"name": company_slug, "website": website_url},
-                        "status": "skipped",
-                        "error_reason": "Failed to load website"
-                    })
-                    continue
-                
-                # Extract page summary
-                summary = await playwright_bridge.extract_summary()
-                
-                # Take screenshot
-                screenshot_data = await playwright_bridge.screenshot()
-                screenshot_url = None
-                if screenshot_data:
-                    screenshot_url = storage.put_screenshot(run_id, company_slug, 1, screenshot_data)
-                
-                # Generate roast
-                roast = generate_roast(summary, request.style)
-                
-                # Save trace data
-                trace_data = {
-                    "url": website_url,
-                    "summary": summary,
-                    "timestamp": datetime.utcnow().isoformat()
-                }
-                storage.put_trace(run_id, company_slug, trace_data)
-                
-                # Create company result
-                company_result = CompanyResult(
-                    name=summary.get("title", company_slug),
-                    website=website_url,
-                    roast=roast,
-                    screenshot_url=screenshot_url,
-                    status="done",
-                    summary=summary
-                )
-                
-                run.results.append(company_result)
-                run.processed_companies += 1
-                
-                # Send WebSocket update
-                await send_company_result(run_id, {
-                    "company": {"name": company_result.name, "website": company_result.website},
-                    "roast": company_result.roast,
-                    "screenshot_url": company_result.screenshot_url,
-                    "status": "done"
-                })
-                
-                logger.info("Processed company", 
-                           extra={'extra_fields': {
-                               'run_id': run_id, 
-                               'company': company_slug, 
-                               'progress': f"{i+1}/{len(company_urls)}"
-                           }})
-                
-            except Exception as e:
-                logger.error("Failed to process company", 
-                           extra={'extra_fields': {
-                               'run_id': run_id, 
-                               'website': website_url, 
-                               'error': str(e)
-                           }})
-                
-                await send_company_result(run_id, {
-                    "company": {"name": website_url, "website": website_url},
-                    "status": "error",
-                    "error_reason": str(e)
-                })
-        
-        # Mark run as completed
-        run.status = "completed"
-        run.completed_at = datetime.utcnow()
-        
-        await connection_manager.send_message(run_id, {"status": "finished"})
-        logger.info("Completed roast run", extra={'extra_fields': {'run_id': run_id}})
-        
-    except Exception as e:
-        run.status = "failed"
-        run.error_message = str(e)
-        logger.error("Failed roast run", extra={'extra_fields': {'run_id': run_id, 'error': str(e)}})
-        
-        await connection_manager.send_message(run_id, {
-            "status": "failed",
-            "error_reason": str(e)
-        })
-    
+            await ws.receive_text()  # keepalive pings from client are okay
+    except Exception:
+        pass
     finally:
-        # Clean up resources
-        try:
-            await playwright_bridge.close()
-        except:
+        CLIENTS[run_id].remove(ws)
+
+def emit(run_id:str, payload:dict):
+    for ws in list(CLIENTS.get(run_id, [])):
+        try: 
+            import asyncio
+            # Schedule the coroutine to run in the event loop
+            asyncio.get_event_loop().call_soon_threadsafe(
+                lambda: asyncio.create_task(ws.send_json(payload))
+            )
+        except: 
             pass
+
+def _runner(run_id: str, req: RunRequest):
+    import asyncio
+    from . import browserbase_client as bb
+    from .playwright_bridge import PW
+    from .llm_client import generate_roast
+
+    async def async_runner():
         try:
-            browserbase_client.close_session(session_id)
-        except:
-            pass
+            jlog(message="Starting browser session", run_id=run_id)
+            
+            # Test API keys first
+            if not os.environ.get("BROWSERBASE_API_KEY"):
+                raise RuntimeError("BROWSERBASE_API_KEY not set")
+            if not os.environ.get("BROWSERBASE_PROJECT_ID"):
+                raise RuntimeError("BROWSERBASE_PROJECT_ID not set")
+            if not os.environ.get("GROK_API_KEY"):
+                raise RuntimeError("GROK_API_KEY not set")
+                
+            jlog(message="API keys validated")
+            
+            sess = bb.create_session({})
+            jlog(message="Browserbase session created", session_id=sess.get("id"))
+            
+            ws = bb.connect_url(sess)
+            jlog(message="Got connection URL", connect_url=ws[:50] + "...")
+            
+            async with PW(ws) as pw:
+                jlog(message="Playwright connected to browser")
+                
+                # collect targets
+                urls = []
+                if req.source == "yc":
+                    jlog(message="Scraping YC companies", batch=req.yc.batch, limit=req.yc.limit)
+                    from .yc_scraper import list_profiles, profile_to_external
+                    profs = await list_profiles(pw.page, req.yc.batch, req.yc.limit)
+                    jlog(message="Found profiles", count=len(profs))
+                    for purl in profs:
+                        name, site = await profile_to_external(pw.page, purl)
+                        if site: 
+                            urls.append((name, site))
+                            jlog(message="Found external site", name=name, site=site)
+                else:
+                    jlog(message="Using custom URLs", count=len(req.custom.urls))
+                    for u in req.custom.urls:
+                        urls.append((u.split("//")[-1], u))
 
+                jlog(message="Starting to process sites", total=len(urls))
+                results = []
+                for i, (name, site) in enumerate(urls):
+                    if shutdown: break
+                    jlog(message="Processing site", index=i+1, name=name, site=site)
+                    try:
+                        await pw.goto(site)
+                        jlog(message="Page loaded", site=site)
+                        
+                        summary = await pw.grab_summary()
+                        jlog(message="Extracted summary", title=summary["title"][:50], hero=summary["hero"][:50])
+                        
+                        shot_path = f"/tmp/{run_id}_{uuid.uuid4().hex[:6]}.png"
+                        await pw.screenshot(shot_path)
+                        jlog(message="Screenshot taken", path=shot_path)
+                        
+                        with open(shot_path, "rb") as f: 
+                            png = f.read()
+                        # Convert to base64 data URL for immediate use
+                        import base64
+                        b64 = base64.b64encode(png).decode()
+                        screenshot_url = f"data:image/png;base64,{b64}"
+                        
+                        jlog(message="Generating roast", style=req.style)
+                        roast = generate_roast(summary, req.style)
+                        jlog(message="Roast generated", roast=roast[:100])
+                        
+                        item = CompanyResult(
+                            name=name, website=site, title=summary["title"],
+                            hero=summary["hero"], cta=summary["cta"],
+                            roast=roast, screenshot_url=screenshot_url
+                        )
+                        results.append(item)
+                        RUNS[run_id].append(item)
+                        emit(run_id, {"company":{"name":name,"website":site},
+                                      "roast":roast, "screenshot_url":screenshot_url, "status":"done"})
+                        jlog(message="Result emitted", name=name)
+                    except Exception as e:
+                        jlog(message="Error processing site", name=name, error=str(e))
+                        item = CompanyResult(name=name, website=site, status="skipped", reason=str(e))
+                        results.append(item)
+                        RUNS[run_id].append(item)
+                        emit(run_id, {"company":{"name":name,"website":site},
+                                      "status":"skipped","reason":str(e)})
+                    await asyncio.sleep(0.2)
 
-async def send_company_result(run_id: str, result: dict):
-    """Send company result via WebSocket."""
-    await connection_manager.send_message(run_id, result)
-
-
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=5000)
+                jlog(message="Run completed", total_results=len(results))
+                emit(run_id, {"status":"finished"})
+        except Exception as e:
+            jlog(message="Fatal error in runner", error=str(e), run_id=run_id)
+            emit(run_id, {"status":"error","error":str(e)})
+    
+    # Run the async function in a new event loop
+    asyncio.run(async_runner())
